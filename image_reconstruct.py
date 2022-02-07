@@ -7,23 +7,65 @@ from test_image_deconstruct import deconstruct_hadamard
 
 
 class Reconstructor:
+    """Reconstructs an image from measurements corresponding to a sequence of Hadamard masks"""
     def __init__(self, resolution):
-        self.resolution = np.asarray(resolution)
+        self.resolution = np.asarray(resolution)  # e.g. [128, 128]
+        self.pixels = self.resolution.prod()  # e.g. 128*128
 
         # Hadamard matrix
-        self.hadamard_mat = hadamard(np.asarray(self.resolution).prod())
+        self.hadamard_mat = hadamard(self.pixels)           # 1 & -1
+        self.hadamard_plus = (1 + self.hadamard_mat) / 2    # 1 & 0
+        self.hadamard_minus = (1 - self.hadamard_mat) / 2   # 0 & 1
 
-    def reconstruct(self, measurements, mask_indexes):
-        measurements_arranged = np.zeros(self.resolution.prod())  # todo is this the correct size?
-        for i, mask_index in enumerate(mask_indexes):
-            measurements_arranged[mask_index] = measurements[i]
-        # todo the above could be redundant if we measure by always setting the measurements matrix to the right size
+    def measure(self, do_return=True):
+        measurements = np.zeros([self.pixels])
+        # we can either skip elements, or rewrite the loop to only be over certain measurements if we want to have
+        # undersampled measurements - therefore those values of the measurements array will stay as zero
+        for i in tqdm(range(self.pixels)):
+            # here, we have 2D masks to display on the DMD and a measurements array to store the measured value in
+            # talk to the DMD with code from https://github.com/csi-dcsc/Pycrafter6500
+            mask_plus = self.hadamard_plus[i, ...].reshape(self.resolution)
+            mask_minus = self.hadamard_minus[i, ...].reshape(self.resolution)
+            measurements[i] = np.abs(np.random.normal(0, 10))  # todo placeholder measurement
+        if do_return:  # either return the measurements or save them to a file
+            return measurements
+        else:
+            print("work in progress")
+            # np.savetxt('outputs/measurement.txt', measurements, '%.5e', ',', '\n')
+            # check that the size of the file won't be too large (I have a feeling it will be on the order of 1GB)
 
-        image = (self.hadamard_mat @ measurements_arranged).reshape(self.resolution)
-        return image
+    def reconstruct(self, measurements):
+        if self.hadamard_mat.shape[0] == measurements.shape[0]:
+            image = self.hadamard_mat @ measurements
+            # image2 = np.linalg.solve(self.hadamard_mat, measurements)
+            # print(np.allclose(image, image2))
+            return image.reshape(self.resolution)
+            # todo find out what the difference is between np.linalg.solve and @
+            #  np.linalg.solve is slower than @ (around 10x for 32x32 and around 15x for 64x64)
+            #  they aren't equal according to np.allclose
+            #  they are very similar but a factor of 1e3 different from each other (using random measurements)
+        else:
+            # the length of the measurements array tells you the masks as they are always the same Hadamard masks
+            raise ValueError("The resolution was different to expected")
+            # rather than raising an error, we can write code to adaptively reconstruct the image even if the mask
 
-    def save_image(self, measurements, mask_indexes):
-        plt.imsave('outputs/output.png', self.reconstruct(measurements, mask_indexes), cmap=plt.get_cmap('gray'))
+    def save_image(self, measurements):
+        # save without ever overwriting a previous output image
+        n = int(0)
+        while True:
+            try:
+                plt.imread(f"outputs/output{n}.png")
+            except FileNotFoundError:
+                plt.imsave(f"outputs/output{n}.png", self.reconstruct(measurements), cmap=plt.get_cmap('gray'))
+                break
+            n += 1
+
+
+def find_nth_best_masks(resolution, measurements, sampling_ratio):
+    threshold = np.sort(abs(measurements))[-int(np.asarray(resolution).prod() * sampling_ratio)]
+    indexes = (abs(measurements) >= threshold)
+    # indexes = np.nonzero((abs(measurements) >= threshold))
+    return indexes
 
 
 def reconstruct(resolution, measurements, hadamard_mat):
@@ -61,13 +103,6 @@ def reconstruct(resolution, measurements, hadamard_mat):
         axes[i][j].set_title(f"{sampling_ratio * 100}% sampling ratio")
 
     plt.show()  # may not be required for some interpreters
-
-
-def find_nth_best_masks(resolution, measurements, sampling_ratio):
-    threshold = np.sort(abs(measurements))[-int(np.asarray(resolution).prod() * sampling_ratio)]
-    indexes = (abs(measurements) >= threshold)
-    # indexes = np.nonzero((abs(measurements) >= threshold))
-    return indexes
 
 
 def reconstruct_with_other_images_best_masks(resolution, file1, file2):

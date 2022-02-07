@@ -8,13 +8,11 @@ import numpy as np
 def deconstruct_hadamard(resolution, file):
     # takes an image and deconstructs it into a series of measurements and the corresponding Hadamard masks
 
-    try:  # todo need a better way of making the input image always greyscale, rather than this
-        original = rgb2gray(rgba2rgb(plt.imread(f"originals/{file}")))
-    except ValueError:
-        try:
-            original = rgb2gray(plt.imread(f"originals/{file}"))
-        except ValueError:
-            original = plt.imread(f"originals/{file}")
+    original = plt.imread(f"originals/{file}")
+    if original.shape[-1] == 4:
+        original = rgba2rgb(original)
+    if original.shape[-1] == 3:
+        original = rgb2gray(original)
 
     # resize to reconstruction size, flatten into 1D array
     original_resized = resize(original, resolution).flatten()
