@@ -13,6 +13,8 @@ class Camera:
         pixels = np.asarray(self.resolution).prod()  # e.g. 128*128
         self.DMD_resolution = [608, 684]
         self.factor = int(self.DMD_resolution[0] / self.resolution[0])  # todo floor, and pad vertically to stop rounding
+        self.pad_width = int((self.DMD_resolution[1] * 2 -
+                              np.kron(np.zeros(self.resolution), np.ones((self.factor, self.factor * 2))).shape[0]))
 
         # Hadamard matrix
         self.hadamard_mat = hadamard(pixels)
@@ -24,7 +26,9 @@ class Camera:
 
         # setup fullscreen cv2 output
         self.window = 'output_window'
-        self.setup_output()
+        self.display_time = 200 * 1e-3  # in seconds = 3 * (1 / 60)
+        self.display_time_ms = int(self.display_time * 1e3)  # in milliseconds
+        self.setup_output()#todo
 
         # setup the multimeter ready to take measurements
         self.rm = []
@@ -33,9 +37,7 @@ class Camera:
 
     def take_picture(self):
         measurements_p_and_m = self.measure()
-        measurements_plus = measurements_p_and_m[0:2, ...]
-        measurements_minus = measurements_p_and_m[1:2, ...]
-        measurements = measurements_plus - measurements_minus  # differential measurement
+        measurements = measurements_p_and_m[0::2, ...] - measurements_p_and_m[1::2, ...]  # differential measurement
 
         # reconstruct image from measurements and masks
         image = self.reconstruct(measurements)
@@ -47,35 +49,37 @@ class Camera:
 
     def measure(self):
         measurements = np.zeros([self.hadamard_all.shape[0]])
-        for i, mask in enumerate(self.hadamard_all):
+        start = time.time()
+        for i, mask in enumerate(self.hadamard_all[:20, ...]):
             # convert the plus & minus hadamard matrixes into the correct images to be displayed on the DMD
             mask_show = np.kron(mask.reshape(self.resolution), np.ones((self.factor, self.factor * 2)))
-            pad_width = int((self.DMD_resolution[1] * 2 - mask_show.shape[0]))  # 760  # todo work out pad_width once
-
-            # pad the mask with zeros either side of the rectangle, so the on the DMD
-            mask_show = np.pad(mask_show, ((0, 0), (pad_width - 400, 400)))  # 608x1976  # todo -400, 400 centres it
-
-            # the DMD rotates the image 90 degrees (), so we need to do the opposite #todo(clockwise/anticlockwise)
-            mask_show = np.rot90(np.rot90(np.rot90(mask_show)))  # 1976x608  # todo rotate 90 the other way once
+            # pad the mask with zeros either side of the rectangle, so the on the DMD it appears roughly centred
+            mask_show = np.pad(mask_show, ((0, 0), (self.pad_width - 400, 400)))  # 608x1976  # todo 400
+            # the DMD rotates the image 90 degrees clockwise, so we need to do the opposite
+            mask_show = np.rot90(mask_show, axes=(1, 0))  # 1976x608
 
             # convert to uint8 and show on the window
-            # frame_rgb = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)  # todo does it need RGB input?
+            # frame_rgb = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
             cv2.imshow(self.window, np.uint8(mask_show * 255))
-            # pause for (time)#todo time is rounded!
-            cv2.waitKey(17)  # in milliseconds ~=1000/60
+            cv2.waitKey(self.display_time_ms)
 
-            # todo timing measurements and display
-            num_of_measures = int(1e5)
-            all_measurements = np.ones([num_of_measures]) * np.nan
-            time.sleep(1/1000)
-            start = time.time
-            j = 0
-            while float(time.time) < float(start) + 15:
-                # Fetch the data from the instruments internal storage to the buffer, and read in the data.
-                all_measurements[j] = float(self.my_instrument.query('FETCh?'))
-                j += 1
-            # average measurements
-            measurements[i] = np.nanmean(all_measurements)
+            # the first <100ms that the mask is displayed is spent waiting
+            # print((time.time() - start) % self.display_time)
+            try:
+                time.sleep(100e-3 - (time.time() - start) % self.display_time)  # todo 100e-3
+            except ValueError:
+                # if we miss this frame, wait until the next
+                print("Too slow! Waiting until the next frame...")
+                time.sleep(self.display_time + 100e-3 - (time.time() - start) % self.display_time)
+
+            # the next ~400ms is spent taking measurements
+            self.reset_input()
+            time.sleep(self.display_time - (time.time() - start) % self.display_time)
+            # Fetch the data from the instruments internal storage to the buffer, then take the average of them
+            print(self.my_instrument.query('FETCh?').split(','))
+            measurements[i] = np.mean(np.array(self.my_instrument.query('FETCh?').split(','), dtype=float))
+            # print(self.my_instrument.query('FETCh?'))
+
         return measurements
 
     def setup_output(self):
@@ -92,8 +96,18 @@ class Camera:
         self.my_instrument = self.rm.open_resource('USB0::0x05E6::0x2100::1269989::INSTR')
         self.my_instrument.timeout = None  # sets no instrument timeout
 
+    def reset_input(self):
+        # tell the multimeter to clear the buffer and reset
+        self.my_instrument.write('*RST')
+
         # Configure the instrument to measure DC Voltage, with a maximum range, and the minimum resolution
-        self.my_instrument.write('CONFigure:VOLTage:DC 10, MIN', )
+        self.my_instrument.write('CONFigure:VOLTage:DC 10, MIN')
+
+        # set the number of PLC for each integration - i.e. measurement time
+        # print(self.my_instrument.query('SENSe:VOLTage:DC:NPLCycles?'))  # 10 PLC per measurement
+        self.my_instrument.write('SENSe:VOLTage:DC:NPLCycles MINimum')
+        # print(self.my_instrument.query('SENSe:VOLTage:DC:NPLCycles?'))  # 0.02 PLC per measurement
+
         # Set the trigger source to internal, and immediate, set the trigger delay to auto, and set the instrument to take 10
         # samples after the trigger event
         self.my_instrument.write('TRIGger:SOURce IMMediate')
@@ -111,6 +125,7 @@ class Camera:
         cv2.destroyAllWindows()
 
         # clear and close the instance of the instrument, and close the resource manager
+        self.my_instrument.write('*RST')  # tell the multimeter to reset
         self.my_instrument.clear()
         self.my_instrument.close()
         self.rm.close()
