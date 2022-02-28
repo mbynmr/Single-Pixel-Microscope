@@ -2,6 +2,7 @@
 # from test_image_deconstruct import test_image, test_image_two
 from output_to_hdmi import output
 from measure_from_multimeter import measure
+from camera import Camera
 
 # image resizer: ffmpeg -i mario.png -vf scale=128:-1 mario128.png
 # xmodmap -e "keycode 49 = backslash"
@@ -15,7 +16,11 @@ from measure_from_multimeter import measure
 
 
 def main():
-    output()
+    resolution = [32, 32]
+    c = Camera(resolution)
+    c.take_picture()
+    c.close()
+    # output()
     # measure()
     # USB0::0x05E6::0x2100::1269989::INSTR
 
