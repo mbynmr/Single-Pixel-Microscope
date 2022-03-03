@@ -20,8 +20,6 @@ def main():
     c = Camera(resolution)
     c.take_picture()
     c.close()
-    # output()
-    # measure()
     # USB0::0x05E6::0x2100::1269989::INSTR
 
 
