@@ -44,21 +44,19 @@ class Camera:
         self.measurements_time = self.integration_time * self.minimum_measurements_per_mask  # in seconds
 
     def take_picture(self):
-        measurements_p_and_m = self.measure()
-        # np.savetxt("outputs/measurements_p_and_m.txt", measurements_p_and_m)
-        # np.savetxt("outputs/times.txt", times)
-        # times = np.loadtxt("outputs/times.txt")
-        # measurements_p_and_m = np.loadtxt("outputs/measurements.txt")
-        # plt.plot(times, measurements_p_and_m)
-        # plt.show()
+        # measurements_p_and_m = self.measure()
+        measurements_p_and_m = np.loadtxt("outputs/measurements.txt")
         measurements = measurements_p_and_m[0::2, ...] - measurements_p_and_m[1::2, ...]  # differential measurement
 
         # reconstruct image from measurements and masks
-        image = self.reconstruct(50 * measurements / np.amax(measurements))
+        image = self.reconstruct(measurements)
+        # image = self.reconstruct(measurements / np.amax(np.abs(measurements)))
         plt.imsave(f"outputs/first_output.png", image, cmap=plt.get_cmap('gray'))
 
     def reconstruct(self, measurements):
         image = self.hadamard_mat @ measurements
+        image = image - np.amin(image)
+        image = image / np.amax(image)
         return np.uint8(image.reshape(self.resolution) * 255)  # todo formatting
 
     def measure(self):
@@ -71,8 +69,7 @@ class Camera:
         deviations = np.zeros([self.hadamard_all.shape[0]])
         numbers = np.zeros([self.hadamard_all.shape[0]])
         # times = np.zeros([self.hadamard_all.shape[0]])
-        for i, mask in enumerate(self.hadamard_all[:40, ...]):  # todo first 20 only!
-            # start = time.time()
+        for i, mask in enumerate(self.hadamard_all[:, ...]):  # todo first 20 only!
             # convert the plus & minus hadamard matrixes into the correct images to be displayed on the DMD
             # turn 32x32 masks into 608x1216 by integer scaling
             mask_show = np.kron(mask.reshape(self.resolution), np.ones((self.factor, self.factor * 2)))
@@ -81,18 +78,20 @@ class Camera:
             # the DMD rotates the image 90 degrees clockwise, so we do the opposite
             # also, the DMD points 0 toward our sample and 1 away, so we need to invert our masks
             mask_show = 1 - np.rot90(mask_show, axes=(1, 0))  # 1976x608
-            if i == 19:
-                mask_show_constant = mask_show
+            # if i == 19:
+            #     mask_show_constant = mask_show
 
             # convert to uint8 and show on the window
-            if i >= 20:
-                cv2.imshow(self.window, np.uint8(mask_show_constant * 255))
-            else:
-                cv2.imshow(self.window, np.uint8(mask_show * 255))
+            # if i >= 20:
+            #     cv2.imshow(self.window, np.uint8(mask_show_constant * 255))
+            # else:
+            cv2.imshow(self.window, np.uint8(mask_show * 255))
             # show the window (for the display time)
             cv2.waitKey(self.display_time_ms)
             # time.sleep(17 * 1e-3)  # 17ms, to make sure this mask is displaying before we take any measurements
 
+            # time.sleep(self.display_time_ms)  # todo testing
+            time.sleep(self.integration_time * 3)  # todo testing
             # tell the multimeter to wait for a trigger (which happens instantly since the trigger is set to immediate)
             self.multimeter.write('INITiate')
             time.sleep(self.measurements_time)  # wait for a certain amount of time to take a multiple measurements
@@ -100,22 +99,22 @@ class Camera:
             # fetch the data from the instruments internal storage, format them, then take the average of them
             # measurements[i] = np.mean(np.array(self.multimeter.query('FETCh?').split(';')[0].split(','), dtype=float))
 
-            # start = time.time()
-
             buffer = np.array(self.multimeter.query('FETCh?').split(';')[0].split(','), dtype=float)
-            while len(buffer) < self.minimum_measurements_per_mask:
-                time.sleep(self.integration_time)
-                buffer = np.array(self.multimeter.query('FETCh?').split(';')[0].split(','), dtype=float)
-            # times[i] = time.time() - start
             deviations[i] = np.std(buffer)
             measurements[i] = np.mean(buffer)
-            # print(time.time() - start)
-            while deviations[i] > 0.05 * measurements[i]:
+            while deviations[i] > 0.001 * measurements[i] or len(buffer) < self.minimum_measurements_per_mask:
                 time.sleep(self.integration_time)
+                # string = self.multimeter.query('FETCh?')
                 buffer = np.array(self.multimeter.query('FETCh?').split(';')[0].split(','), dtype=float)
                 deviations[i] = np.std(buffer)
                 measurements[i] = np.mean(buffer)
+                # print(f"\n{i = } and buffer length = {len(buffer)}")
+                # print(string)
+                # print(buffer)
+            # times[i] = time.time() - start
             numbers[i] = len(buffer)  # int(np.shape(buffer)[0])
+            # 1*10^-3 or 4*10^-4
+            # 4*10^-7 ish
 
         np.savetxt("outputs/numbers.txt", numbers, fmt='%d')
         np.savetxt("outputs/measurements.txt", measurements)
