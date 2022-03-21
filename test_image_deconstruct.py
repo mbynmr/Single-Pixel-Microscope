@@ -6,6 +6,18 @@ import numpy as np
 from PIL import Image
 
 
+def deconstruct_general(resolution, image, matrix):
+    # takes image and returns the series of deconstructed measurements dependent on the mask matrix
+
+    original = plt.imread(f"originals/{image}")
+    if original.shape[-1] == 4:
+        original = rgba2rgb(original)
+    if original.shape[-1] == 3:
+        original = rgb2gray(original)
+
+    return matrix @ resize(original, resolution).flatten()
+
+
 def deconstruct_hadamard(resolution, file):
     # takes an image and deconstructs it into a series of measurements and the corresponding Hadamard masks
 

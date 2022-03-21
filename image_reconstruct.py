@@ -3,40 +3,51 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 import numpy as np
 
-from test_image_deconstruct import deconstruct_hadamard
+from test_image_deconstruct import deconstruct_general, deconstruct_hadamard
 
 
 class Reconstructor:
-    """Reconstructs an image from measurements corresponding to a sequence of Hadamard masks"""
+    """
+    Reconstructs an image from measurements corresponding to a sequence of Hadamard masks
+    """
+
     def __init__(self, resolution):
         self.resolution = np.asarray(resolution)  # e.g. [128, 128]
         self.pixels = self.resolution.prod()  # e.g. 128*128
 
         # Hadamard matrix
-        self.hadamard_mat = hadamard(self.pixels)           # 1 & -1
-        self.hadamard_plus = (1 + self.hadamard_mat) / 2    # 1 & 0
-        self.hadamard_minus = (1 - self.hadamard_mat) / 2   # 0 & 1
+        hadamard_mat = hadamard(self.pixels)           # 1 & -1
+        # self.hadamard_plus = (1 + self.hadamard_mat) / 2    # 1 & 0
+        # self.hadamard_minus = (1 - self.hadamard_mat) / 2   # 0 & 1
+        # random matrix
+        random_mat = np.random.randint(low=0, high=2, size=[self.resolution, self.pixels])  # todo wrong?
+        # mask matrix
+        self.matrix = hadamard_mat
+        self.matrix = random_mat
 
-    def measure(self, do_return=True):
-        measurements = np.zeros([self.pixels])
-        # we can either skip elements, or rewrite the loop to only be over certain measurements if we want to have
-        # undersampled measurements - therefore those values of the measurements array will stay as zero
-        for i in tqdm(range(self.pixels)):
-            # here, we have 2D masks to display on the DMD and a measurements array to store the measured value in
-            # talk to the DMD with code from https://github.com/csi-dcsc/Pycrafter6500
-            mask_plus = self.hadamard_plus[i, ...].reshape(self.resolution)
-            mask_minus = self.hadamard_minus[i, ...].reshape(self.resolution)
-            measurements[i] = np.abs(np.random.normal(0, 10))  # todo placeholder measurement
-        if do_return:  # either return the measurements or save them to a file
+    def measure(self, file, do_return=None):
+        measurements = deconstruct_general(self.resolution, file, self.matrix)
+        if do_return is None:  # either return the measurements or save them to a file
             return measurements
         else:
-            print("work in progress")
+            raise NotImplementedError("work in progress")
             # np.savetxt('outputs/measurement.txt', measurements, '%.5e', ',', '\n')
             # check that the size of the file won't be too large (I have a feeling it will be on the order of 1GB)
 
+    def undersample(self, measurements, method='last', portion=0.9):
+        if method == 'last':
+            measurements[int(measurements.shape[0] * 0.9):] = 0
+        elif method == 'first':
+            measurements[:int(measurements.shape[0] * 0.9)] = 0
+        elif method == 'random':
+            # todo choose which method
+            measurements = np.where(np.random.random(measurements.shape) < portion, measurements, 0)
+            # measurements = np.where(np.random.random() < portion, measurements, 0)  # faster or slower?
+        return measurements
+
     def reconstruct(self, measurements):
-        if self.hadamard_mat.shape[0] == measurements.shape[0]:
-            image = self.hadamard_mat @ measurements
+        if self.matrix.shape[0] == measurements.shape[0]:
+            image = self.matrix @ measurements
             # image2 = np.linalg.solve(self.hadamard_mat, measurements)
             # print(np.allclose(image, image2))
             return image.reshape(self.resolution)

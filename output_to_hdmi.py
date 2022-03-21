@@ -4,7 +4,7 @@ from scipy.linalg import hadamard
 import cv2
 import time
 
-from dmd_patterns import enlarge_pattern
+# from dmd_patterns import enlarge_pattern
 
 
 def output():
@@ -24,8 +24,7 @@ def output():
     # frame_rgb = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
 
     for i in range(hadamard_mat.shape[0]):
-        mask = enlarge_pattern(hadamard_plus[i, ...].reshape(resolution), factor)  # 608x1216
-        # pattern = np.kron(pattern, np.ones((factor, factor * 2)))  # todo separate fuction for enlarge?
+        mask = np.kron(hadamard_plus[i, ...].reshape(resolution), np.ones((factor, factor * 2)))  # 608x1216
         pad_width = int((DMD_resolution[1] * 2 - mask.shape[0]))  # 760
         mask_show = np.pad(mask, ((0, 0), (pad_width - 400, 400)))  # 608x1976
         mask_show = np.rot90(np.rot90(np.rot90(mask_show)))  # 1976x608
