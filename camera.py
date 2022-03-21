@@ -31,16 +31,16 @@ class Camera:
         self.window = set_up_mask_output()
 
         # set up the multimeter
-        plc = 1 / 50
+        plc = 1 / 50  # Power Line Cycle: the time period of one oscillation of the power line at 50Hz
         xplc = [0.02, 0.1, 1, 10]  # these are the only options for the multimeter
-        self.xplc = xplc[2]
+        self.xplc = xplc[2]  # measure every ___ power line cycle
         self.rm, self.multimeter = set_up_multimeter()
         # prepare the multimeter for a run of measurements
         self.reset_multimeter()
         # set the measurement time
         # self.measurements_time = (self.display_time_ms * 3) / 1000  # in seconds, approximately 3 frames long
-        self.minimum_measurements_per_mask = 10  # todo how many measurements per mask?
-        self.integration_time = plc * self.xplc  # in seconds
+        self.minimum_measurements_per_mask = 3  # todo how many measurements per mask?
+        self.integration_time = plc * self.xplc  # in seconds, the time for a single measurement
         self.measurements_time = self.integration_time * self.minimum_measurements_per_mask  # in seconds
 
     def take_picture(self):
@@ -175,5 +175,6 @@ def set_up_multimeter():
     rm = visa.ResourceManager()
     # open an instance of the USB resource class and assign the object handle multimeter
     multimeter = rm.open_resource('USB0::0x05E6::0x2100::1269989::INSTR')
+    # USB0::0x05E6::0x2100::1269989::INSTR
     multimeter.timeout = None  # sets no instrument timeout
     return rm, multimeter
