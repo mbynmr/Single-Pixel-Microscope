@@ -19,11 +19,13 @@ class Reconstructor:
         hadamard_mat = hadamard(self.pixels)           # 1 & -1
         # self.hadamard_plus = (1 + self.hadamard_mat) / 2    # 1 & 0
         # self.hadamard_minus = (1 - self.hadamard_mat) / 2   # 0 & 1
+
         # random matrix
-        random_mat = np.random.randint(low=0, high=2, size=[self.resolution, self.pixels])  # todo wrong?
-        # mask matrix
+        # random_mat = np.random.randint(low=0, high=2, size=[self.resolution, self.pixels])  # todo wrong?
+
+        # mask matrix  # todo choosing method
         self.matrix = hadamard_mat
-        self.matrix = random_mat
+        # self.matrix = random_mat
 
     def measure(self, file, do_return=None):
         measurements = deconstruct_general(self.resolution, file, self.matrix)
@@ -33,17 +35,6 @@ class Reconstructor:
             raise NotImplementedError("work in progress")
             # np.savetxt('outputs/measurement.txt', measurements, '%.5e', ',', '\n')
             # check that the size of the file won't be too large (I have a feeling it will be on the order of 1GB)
-
-    def undersample(self, measurements, method='last', portion=0.9):
-        if method == 'last':
-            measurements[int(measurements.shape[0] * 0.9):] = 0
-        elif method == 'first':
-            measurements[:int(measurements.shape[0] * 0.9)] = 0
-        elif method == 'random':
-            # todo choose which method
-            measurements = np.where(np.random.random(measurements.shape) < portion, measurements, 0)
-            # measurements = np.where(np.random.random() < portion, measurements, 0)  # faster or slower?
-        return measurements
 
     def reconstruct(self, measurements):
         if self.matrix.shape[0] == measurements.shape[0]:
@@ -70,6 +61,29 @@ class Reconstructor:
                 plt.imsave(f"outputs/output{n}.png", self.reconstruct(measurements), cmap=plt.get_cmap('gray'))
                 break
             n += 1
+
+
+def undersample(measurements, method='last', portion=0.9):
+    if method == 'last':
+        measurements[int(measurements.shape[0] * portion):] = 0
+    elif method == 'first':
+        measurements[:int(measurements.shape[0] * portion)] = 0
+    elif method == 'middle':
+        measurements[int(measurements.shape[0] * (0.5 - (1 - portion) / 2)):int(measurements.shape[0] * (0.5 + (1 - portion) / 2))] = 0
+    elif method == 'random':
+        return np.where(np.random.random(measurements.shape) < portion, measurements, 0)
+        # return np.where(np.random.random() < portion, measurements, 0)  # this is incorrect
+    return measurements
+
+
+def add_noise(measurements, multiplier=1e-2, method='normal'):
+    # multiplier is found from our "worst case" noise from real measurements
+    std = multiplier * measurements  # standard deviation found from multiplier
+
+    if method == 'normal':
+        return measurements + np.multiply(std, np.random.randn(*measurements.shape))  # normal noise
+    elif method == 'uniform':
+        return measurements + np.multiply(std, 1 - 2 * np.random.random(*measurements.shape))  # uniform noise
 
 
 def find_nth_best_masks(resolution, measurements, sampling_ratio):

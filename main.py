@@ -1,11 +1,10 @@
 import matplotlib.pyplot as plt
 
-from image_reconstruct import Reconstructor
-from image_reconstruct import reconstruct_with_other_images_best_masks
+from image_reconstruct import Reconstructor, undersample, add_noise, reconstruct_with_other_images_best_masks
 # from test_image_deconstruct import test_image, test_image_two
 # from output_to_hdmi import output
 # from measure_from_multimeter import measure
-from camera import Camera
+# from camera import Camera  # todo uncomment
 # from notify_run import Notify  # todo uncomment
 
 # image resizer: ffmpeg -i mario.png -vf scale=128:-1 mario128.png
@@ -21,19 +20,24 @@ from camera import Camera
 
 
 def main():
-    power = int(4)
+    power = int(5)
     resolution = [2 ** power, 2 ** power]
+    print(f"{resolution = }")
 
     file = "mario128.png"
 
     r = Reconstructor(resolution)
     measurements = r.measure(file)
-    # method = 'first'
-    # method = 'random'
-    method = 'last'
-    measurements = r.undersample(measurements, method, 0.9)
-    image = r.reconstruct(measurements)
-    plt.imsave(f"outputs/output_{file}", image)
+    plt.imsave(f"outputs/output_{file}", r.reconstruct(measurements), cmap=plt.get_cmap('gray'))
+    noise_type = 'normal'
+    # noise_type = 'uniform'
+    # measurements = add_noise(measurements, 5e-2, noise_type)
+    undersample_method = 'last'
+    # undersample_method = 'first'
+    # undersample_method = 'middle'
+    # undersample_method = 'random'
+    measurements = undersample(measurements, undersample_method, 0.99)
+    plt.imsave(f"outputs/output_{0.99}_{file}", r.reconstruct(measurements), cmap=plt.get_cmap('gray'))
 
     # reconstruct_with_other_images_best_masks([32, 32], "Earth4k1.jpg", "Earth4k1.jpg")
 
