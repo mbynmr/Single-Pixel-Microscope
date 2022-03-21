@@ -14,7 +14,7 @@ def noise_and_undersampling(resolution):
     plt.imsave(f"outputs/output_{file}", r.reconstruct(measurements), cmap=plt.get_cmap('gray'))
     noise_type = 'normal'
     # noise_type = 'uniform'
-    # measurements = add_noise(measurements, 1e-4, noise_type)
+    # measurements = add_noise(measurements, 1e-5, noise_type)
     # plt.imsave(f"outputs/output_noise_{file}", r.reconstruct(measurements), cmap=plt.get_cmap('gray'))
     undersample_method = 'last'
     # undersample_method = 'first'

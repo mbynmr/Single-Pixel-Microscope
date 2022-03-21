@@ -14,6 +14,7 @@ from noise_and_undersampling import noise_and_undersampling
 #  converts input (test) images to greyscale
 #  use images as masks? may be useful for AI cases "is this a dog?" compressed sensing could do it very fast
 #  deconstruct 2 images and compare the measurements to tell how alike images are? Can't see how this is useful
+#  our camera sets minimum pixel values to min 0 & max 255, so there isn't a real-world transmission measurement
 
 
 def main():

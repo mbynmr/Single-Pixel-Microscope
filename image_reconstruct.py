@@ -14,7 +14,7 @@ class Reconstructor:
     def __init__(self, resolution, method='Hadamard'):
         self.resolution = np.asarray(resolution)  # e.g. [128, 128]
         self.pixels = self.resolution.prod()  # e.g. 128*128
-        self.simple = False
+        self.hadamard_bool = False
 
         # mask matrix
         if method == 'Hadamard':  # Hadamard matrix
@@ -22,7 +22,7 @@ class Reconstructor:
             # self.hadamard_plus = (1 + self.hadamard_mat) / 2    # 1 & 0
             # self.hadamard_minus = (1 - self.hadamard_mat) / 2   # 0 & 1
             self.matrix = hadamard(self.pixels)
-            self.simple = True
+            self.hadamard_bool = True
         elif method == 'random':  # random matrix
             self.matrix = np.random.randint(low=0, high=2, size=[self.pixels, self.pixels])
             # self.matrix = np.random.randint(low=-1, high=2, size=[self.pixels, self.pixels])  # todo -1, 0, 1?
@@ -39,60 +39,52 @@ class Reconstructor:
             # check that the size of the file won't be too large (I have a feeling it will be on the order of 1GB)
 
     def reconstruct(self, measurements):
-        # return (self.matrix @ measurements).reshape(self.resolution)
-        return np.linalg.solve(self.matrix, measurements).reshape(self.resolution)
-        # the difference between np.linalg.solve(m1, m2) and m1 @ m2 is that:
+        if self.hadamard_bool:  # faster method (only works for Hadamard masks, not random masks)
+            return (self.matrix @ measurements).reshape(self.resolution)
+        elif np.any(measurements == 0):
+            self.matrix = self.matrix[..., measurements != 0]
+            measurements = measurements[measurements != 0]
+            answer = np.asarray(1)
+            # todo l1 minimisation
+            #  use pdf lecture notes on compressed sensing
+            #  find out how to do l1-norm minimisation in python: https://stackoverflow.com/questions/58584127
+            return answer.reshape(self.resolution)
+        else:
+            return np.linalg.solve(self.matrix, measurements).reshape(self.resolution)
+        # the differences between np.linalg.solve(m1, m2) and m1 @ m2 are:
         #  np.linalg.solve is slower than @ (around 10x for 32x32 and around 15x for 64x64)
         #  @ doesn't work for reconstructing using random masks
 
     def save_image(self, measurements):
         # save without ever overwriting a previous output image
         n = int(0)
-        while True:
-            try:
+        try:
+            while True:
                 plt.imread(f"outputs/output{n}.png")
-            except FileNotFoundError:
-                plt.imsave(f"outputs/output{n}.png", self.reconstruct(measurements), cmap=plt.get_cmap('gray'))
-                break
-            n += 1
+                n += 1
+        except FileNotFoundError:
+            plt.imsave(f"outputs/output{n}.png", self.reconstruct(measurements), cmap=plt.get_cmap('gray'))
 
     def undersample(self, measurements, method='last', portion=0.9):
-        if self.simple:
-            if method == 'last':
-                self.matrix[..., int(measurements.shape[0] * portion):] = 0
-                measurements[int(measurements.shape[0] * portion):] = 0
-            elif method == 'first':
-                self.matrix[..., :int(measurements.shape[0] * portion)] = 0
-                measurements[:int(measurements.shape[0] * portion)] = 0
-            elif method == 'middle':
-                self.matrix[..., int(measurements.shape[0] * (0.5 - (1 - portion) / 2)):
-                                 int(measurements.shape[0] * (0.5 + (1 - portion) / 2))] = 0
-                measurements[int(measurements.shape[0] * (0.5 - (1 - portion) / 2)):
+        if method == 'last':
+            self.matrix[..., int(measurements.shape[0] * portion):] = 0
+            self.matrix[0, int(measurements.shape[0] * portion):] = 1
+            measurements[int(measurements.shape[0] * portion):] = 0
+        elif method == 'first':
+            self.matrix[..., :int(measurements.shape[0] * portion)] = 0
+            measurements[:int(measurements.shape[0] * portion)] = 0
+        elif method == 'middle':
+            self.matrix[..., int(measurements.shape[0] * (0.5 - (1 - portion) / 2)):
                              int(measurements.shape[0] * (0.5 + (1 - portion) / 2))] = 0
-            elif method == 'random':
-                random_indexes = np.random.random(measurements.shape) < portion
-                return np.where(random_indexes, measurements, 0)
-            else:
-                raise NotImplementedError(f"there is no '{method}' method")
-            return measurements
-        # else:
-        #     if method == 'last':
-        #         self.matrix = self.matrix[:int(measurements.shape[0] * portion)]
-        #         return measurements[:int(measurements.shape[0] * portion)]
-        #     elif method == 'first':
-        #         self.matrix = self.matrix[int(measurements.shape[0] * portion):]
-        #         return measurements[int(measurements.shape[0] * portion):]
-        #     elif method == 'middle':
-        #         self.matrix = np.asarray([self.matrix[:int(measurements.shape[0] * (0.5 - (1 - portion) / 2))],
-        #                                   self.matrix[int(measurements.shape[0] * (0.5 + (1 - portion) / 2)):]])
-        #         return np.asarray([measurements[:int(measurements.shape[0] * (0.5 - (1 - portion) / 2))],
-        #                            measurements[int(measurements.shape[0] * (0.5 + (1 - portion) / 2)):]])
-        #     elif method == 'random':
-        #         random_indexes = np.random.random(measurements.shape) < portion
-        #         self.matrix = self.matrix[random_indexes]
-        #         return measurements[random_indexes]
-        #     else:
-        #         raise NotImplementedError(f"there is no '{method}' method")
+            measurements[int(measurements.shape[0] * (0.5 - (1 - portion) / 2)):
+                         int(measurements.shape[0] * (0.5 + (1 - portion) / 2))] = 0
+        elif method == 'random':
+            random_indexes = np.random.random(measurements.shape) < portion  # the same random indexes for mat & meas
+            self.matrix = self.matrix[..., random_indexes]
+            return np.where(random_indexes, measurements, 0)
+        else:
+            raise NotImplementedError(f"there is no '{method}' method")
+        return measurements
 
 
 def add_noise(measurements, multiplier=1e-2, method='normal'):
