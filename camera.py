@@ -2,6 +2,7 @@ import time
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.linalg import hadamard
+from scipy.ndimage import rotate
 import cv2
 import pyvisa as visa
 from tqdm import tqdm
@@ -11,11 +12,16 @@ class Camera:
     def __init__(self, resolution):
         self.resolution = resolution
         pixels = np.asarray(self.resolution).prod()  # 32*32 = 1024
-        self.DMD_resolution = [608, 684]
-        self.factor = int(self.DMD_resolution[0] / self.resolution[0])  # todo floor, and pad vertically to stop rounding
-        self.pad_width = int((self.DMD_resolution[1] * 2 -
-                              np.kron(np.zeros(self.resolution), np.ones((self.factor, self.factor * 2))).shape[0]))
-        # pad_width = 760
+        DMD_resolution = [608, 684]
+        self.factor = int(DMD_resolution[0] / (self.resolution[0] * 2 ** (1 / 2)))
+        # todo factor: floor, and pad vertically to stop rounding
+        self.pad_width = int(DMD_resolution[1] * 2 - np.kron(
+            np.zeros(self.resolution), np.ones((self.factor, self.factor * 2))).shape[0])
+
+        self.factor_old = int(DMD_resolution[0] / self.resolution[0])  # todo remove?
+        self.pad_width_old = int(DMD_resolution[1] * 2 - np.kron(
+            np.zeros(self.resolution), np.ones((self.factor_old, self.factor_old * 2))).shape[0])  # todo remove?
+        # pad_width_old = 760
 
         # Hadamard matrix
         self.hadamard_mat = hadamard(pixels)
@@ -24,13 +30,13 @@ class Camera:
         self.hadamard_all[1::2, ...] = (1 - self.hadamard_mat) / 2  # 0 & 1
         # self.hadamard_all = 1 - self.hadamard_all  # todo check if 1 is toward the sample and 0 is away or not
 
-        # set up fullscreen cv2 output (masks on the DMD)
-        self.display_time = 3 * (1 / 60)  # in seconds = 3 * (1 / 60)
-        self.display_time_ms = int(self.display_time * 1e3)  # in milliseconds
+        # set up fullscreen cv2 output (for masks on the DMD)
+        # self.display_time = 3 * (1 / 60)  # in seconds = 3 * (1 / 60)
+        # self.display_time_ms = int(self.display_time * 1e3)  # in milliseconds
         # self.display_time_ms = int(1000 / 60)  # in milliseconds
         self.window = set_up_mask_output()
 
-        # set up the multimeter
+        # set up the multimeter & measurements
         plc = 1 / 50  # Power Line Cycle: the time period of one oscillation of the power line at 50Hz
         xplc = [0.02, 0.1, 1, 10]  # these are the only options for the multimeter
         self.xplc = xplc[2]  # measure every ___ power line cycle
@@ -44,13 +50,12 @@ class Camera:
         self.measurements_time = self.integration_time * self.minimum_measurements_per_mask  # in seconds
 
     def take_picture(self):
-        # measurements_p_and_m = self.measure()
-        measurements_p_and_m = np.loadtxt("outputs/measurements.txt")
+        measurements_p_and_m = self.measure()
+        # measurements_p_and_m = np.loadtxt("outputs/measurements.txt")
         measurements = measurements_p_and_m[0::2, ...] - measurements_p_and_m[1::2, ...]  # differential measurement
 
         # reconstruct image from measurements and masks
         image = self.reconstruct(measurements)
-        # image = self.reconstruct(measurements / np.amax(np.abs(measurements)))
         plt.imsave(f"outputs/first_output.png", image, cmap=plt.get_cmap('gray'))
 
     def reconstruct(self, measurements):
@@ -62,49 +67,37 @@ class Camera:
     def measure(self):
         # the first cv2 display takes a while to set up, and this was causing problems with the measurements
         cv2.imshow(self.window, cv2.imread("originals/splash.png"))  # first cv2 display
-        cv2.waitKey(self.display_time_ms)
+        cv2.waitKey(1)
         time.sleep(15)
 
         measurements = np.zeros([self.hadamard_all.shape[0]])
         deviations = np.zeros([self.hadamard_all.shape[0]])
         numbers = np.zeros([self.hadamard_all.shape[0]])
         # times = np.zeros([self.hadamard_all.shape[0]])
-        for i, mask in enumerate(self.hadamard_all[:, ...]):  # todo first 20 only!
+        for i, mask in enumerate(self.hadamard_all[:, ...]):  # todo first 20 only!  # todo are we taking the wrong dimension?
             # convert the plus & minus hadamard matrixes into the correct images to be displayed on the DMD
-            # turn 32x32 masks into 608x1216 by integer scaling
-            mask_show = np.kron(mask.reshape(self.resolution), np.ones((self.factor, self.factor * 2)))
-            # pad the rectangular mask with zeros on both sides, so the on the DMD it appears as a centred square
-            mask_show = np.pad(mask_show, ((0, 0), (self.pad_width - 400, 400)))  # 608x1976  # todo 400 ish
-            # the DMD rotates the image 90 degrees clockwise, so we do the opposite
-            # also, the DMD points 0 toward our sample and 1 away, so we need to invert our masks
-            mask_show = 1 - np.rot90(mask_show, axes=(1, 0))  # 1976x608
-            # if i == 19:
-            #     mask_show_constant = mask_show
+            mask_show = self.reshape_mask(mask)
 
-            # convert to uint8 and show on the window
-            # if i >= 20:
-            #     cv2.imshow(self.window, np.uint8(mask_show_constant * 255))
-            # else:
+            # convert to uint8 and show on the window  # todo uint8 or binary?
             cv2.imshow(self.window, np.uint8(mask_show * 255))
             # show the window (for the display time)
-            cv2.waitKey(self.display_time_ms)
-            # time.sleep(17 * 1e-3)  # 17ms, to make sure this mask is displaying before we take any measurements
+            cv2.waitKey(1)
+            # time.sleep(60 / 1000)  # ~17ms, to make sure this mask is displaying before we take any measurements
 
             # time.sleep(self.display_time_ms)  # todo testing
             time.sleep(self.integration_time * 3)  # todo testing
             # tell the multimeter to wait for a trigger (which happens instantly since the trigger is set to immediate)
             self.multimeter.write('INITiate')
-            time.sleep(self.measurements_time)  # wait for a certain amount of time to take a multiple measurements
-
+            # string = self.multimeter.query('FETCh?')
             # fetch the data from the instruments internal storage, format them, then take the average of them
             # measurements[i] = np.mean(np.array(self.multimeter.query('FETCh?').split(';')[0].split(','), dtype=float))
 
+            time.sleep(self.measurements_time)  # wait for a certain amount of time to take a multiple measurements
             buffer = np.array(self.multimeter.query('FETCh?').split(';')[0].split(','), dtype=float)
             deviations[i] = np.std(buffer)
             measurements[i] = np.mean(buffer)
-            while deviations[i] > 0.001 * measurements[i] or len(buffer) < self.minimum_measurements_per_mask:
+            while deviations[i] > 1e-5 * measurements[i] or len(buffer) < self.minimum_measurements_per_mask:
                 time.sleep(self.integration_time)
-                # string = self.multimeter.query('FETCh?')
                 buffer = np.array(self.multimeter.query('FETCh?').split(';')[0].split(','), dtype=float)
                 deviations[i] = np.std(buffer)
                 measurements[i] = np.mean(buffer)
@@ -123,6 +116,22 @@ class Camera:
         # np.savetxt("outputs/times.txt", times[:200])
         # np.savetxt("outputs/measurements_p_and_m.txt", measurements[:200])
         return measurements
+
+    def reshape_mask(self, mask):
+        # reshape to be 2D and square, rotate 45, integer upscale, pad to be rectangular, rotate 90, invert (1 - mask)
+        return 1 - np.rot90(np.pad(np.kron(
+            rotate(mask.reshape(self.resolution), angle=45), np.ones((self.factor, self.factor * 2))
+        ), ((0, 0), (self.pad_width * 3 / 2, self.pad_width / 2))), axes=(1, 0))  # 1976x608
+
+    def reshape_mask_old(self, mask):  # no 45 degree rotation to eliminate grid artefact, also readable code!
+        # turn 32x32 masks into 608x1216 by integer scaling
+        mask_show = np.kron(mask.reshape(self.resolution), np.ones((self.factor_old, self.factor_old * 2)))
+        # pad the rectangular mask with zeros on both sides, so the on the DMD it appears as a centred square
+        mask_show = np.pad(mask_show, ((0, 0), (self.pad_width_old - 380, 380)))  # 608x1976
+        # the DMD rotates the image 90 degrees clockwise, so we do the opposite
+        # also, the DMD points 0 toward our sample and 1 away, so we need to invert our masks
+        mask_show = 1 - np.rot90(mask_show, axes=(1, 0))  # 1976x608
+        return mask_show
 
     def reset_multimeter(self):
         # set the multimeter up to take (and store) infinite measurements as fast as possible when called to INITiate

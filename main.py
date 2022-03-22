@@ -1,8 +1,6 @@
-import matplotlib.pyplot as plt
-
 from noise_and_undersampling import noise_and_undersampling
-# from camera import Camera  # todo uncomment
-# from notify_run import Notify  # todo uncomment
+from camera import Camera
+from notify_run import Notify
 
 # image resizer: ffmpeg -i mario.png -vf scale=128:-1 mario128.png
 # xmodmap -e "keycode 49 = backslash"
@@ -15,6 +13,7 @@ from noise_and_undersampling import noise_and_undersampling
 #  use images as masks? may be useful for AI cases "is this a dog?" compressed sensing could do it very fast
 #  deconstruct 2 images and compare the measurements to tell how alike images are? Can't see how this is useful
 #  our camera sets minimum pixel values to min 0 & max 255, so there isn't a real-world transmission measurement
+#  non-binary masks? would that help? probably not?
 
 
 def main():
@@ -23,16 +22,17 @@ def main():
     resolution = [2 ** power, 2 ** power]
     print(f"{resolution = }")
 
-    noise_and_undersampling(resolution)
+    # noise_and_undersampling(resolution)
 
-    # try:
-    #     c = Camera(resolution)
-    #     c.take_picture()
-    #     # c.measure()
-    #     c.close()
-    # finally:
-    #     notify = Notify()
-    #     notify.send('Finished')
+    try:
+        c = Camera(resolution)
+        c.take_picture()
+        # c.measure()
+        c.close()
+    finally:
+        notify = Notify()
+        notify.send('Finished')
+        # Notify().send('Finished')
 
 
 if __name__ == '__main__':
