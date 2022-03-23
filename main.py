@@ -1,6 +1,8 @@
+# from notify_run import Notify
+
 from noise_and_undersampling import noise_and_undersampling
-from camera import Camera
-from notify_run import Notify
+from rotating_stuff import rotating_masks
+# from camera import Camera
 
 # image resizer: ffmpeg -i mario.png -vf scale=128:-1 mario128.png
 # xmodmap -e "keycode 49 = backslash"
@@ -17,17 +19,27 @@ from notify_run import Notify
 
 
 def main():
-    power = int(6)
-    # 4: 16x16, 5: 32x32, 6: 64x64, 7: 128x128, 8: 256x256
-    resolution = [2 ** power, 2 ** power]
-    print(f"{resolution = }")
+    power = int(2)  # 4: 16x16, 5: 32x32, 6: 64x64, 7: 128x128, 8: 256x256
 
-    # noise_and_undersampling(resolution)
+    xplc_index = int(2)  # 0 to 3: [0.02, 0.1, 1, 10]
+    measurements_per_mask = int(3)
+
+    fraction = 1
+    # method = 'Hadamard'
+    method = 'Walsh'
+    # method = 'Random'
+
+    rotating_masks([2 ** power, 2 ** power])
+    # noise_and_undersampling([2 ** power, 2 ** power])
+    return  # todo comment out
 
     try:
-        c = Camera(resolution)
-        c.take_picture()
-        # c.measure()
+        resolution = [2 ** power, 2 ** power]
+        print(f"{resolution = }")
+        xplc = [0.02, 0.1, 1, 10]  # these are the only options for the multimeter
+
+        c = Camera(resolution, xplc[xplc_index], measurements_per_mask, fraction, method)
+        c.take_picture(5)  # input pause time in seconds before the masks are shown
         c.close()
     finally:
         notify = Notify()
