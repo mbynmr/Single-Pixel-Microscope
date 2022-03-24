@@ -1,24 +1,24 @@
-from image_reconstruct import Reconstructor
-from image_reconstruct import reconstruct_with_other_images_best_masks
-# from test_image_deconstruct import test_image, test_image_two
-# from output_to_hdmi import output
-# from measure_from_multimeter import measure
-from camera import Camera
 from notify_run import Notify
+
+# from noise_and_undersampling import noise_and_undersampling
+from camera import Camera
 
 # image resizer: ffmpeg -i mario.png -vf scale=128:-1 mario128.png
 # xmodmap -e "keycode 49 = backslash"
 
 # very helpful: https://github.com/cbasedlf/single_pixel_demo/blob/master/sp_demo.py
-# will need next: https://github.com/csi-dcsc/Pycrafter6500
 # todo
-#  python 3.8 environment: pip install numpy matplotlib scikit-image tqdm pyusb opencv-python
+#  python 3.8 environment: pip install numpy matplotlib scikit-image tqdm opencv-python pyvisa-py notify-run
 #  always square image dimensions (128x128, 64x64, etc) - is it possible to have non-square dimensions? I think so
 #  converts input (test) images to greyscale
+#  use images as masks? may be useful for AI cases "is this a dog?" compressed sensing could do it very fast
+#  deconstruct 2 images and compare the measurements to tell how alike images are? Can't see how this is useful
+#  our camera sets minimum pixel values to min 0 & max 255, so there isn't a real-world transmission measurement
+#  non-binary masks? would that help? probably not?
 
 
 def main():
-    power = int(4)  # 4: 16x16, 5: 32x32, 6: 64x64, 7: 128x128, 8: 256x256
+    power = int(5)  # 4: 16x16, 5: 32x32, 6: 64x64, 7: 128x128, 8: 256x256
 
     xplc_index = int(2)  # 0 to 3: [0.02, 0.1, 1, 10]
     measurements_per_mask = int(3)

@@ -2,11 +2,11 @@ import time
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.linalg import hadamard
-from scipy.ndimage import rotate
 import cv2
 import pyvisa as visa
-from HadamardOrdering import Walsh
 from tqdm import tqdm
+
+from HadamardOrdering import Walsh
 
 
 class Camera:
@@ -77,8 +77,7 @@ class Camera:
         image = self.matrix @ measurements
         image = image - np.amin(image)
         image = image / np.amax(image)
-        return np.uint8(image.reshape(self.resolution)[..., ::-1] * 255)  # todo ::-1
-        # return np.uint8(image.reshape(self.resolution) * 255)
+        return np.uint8(image.reshape(self.resolution)[..., ::-1] * 255)
 
     def measure(self, pause_time):
         # the first cv2 display takes a while to set up, and this was causing problems with the measurements
@@ -89,23 +88,21 @@ class Camera:
         measurements = np.zeros([self.matrix_all.shape[0]])
         deviations = np.zeros([self.matrix_all.shape[0]])
         numbers = np.zeros([self.matrix_all.shape[0]])
-        # times = np.zeros([self.hadamard_all.shape[0]])
-        # for i, mask in enumerate(self.hadamard_all[:, ...]):
+        # times = np.zeros([self.matrix_all.shape[0]])
+        # for i, mask in enumerate(self.matrix_all[:, ...]):  # todo are we taking the wrong dimension?
 
         i = 0
         while i < 2 * int(self.matrix_all.shape[0] * self.frac / 2):
-            # mask_show = self.reshape_mask_old(self.matrix_all[i, ...])
-            mask_show = self.reshape_mask(self.matrix_all[i, ...])
+            mask_show = self.reshape_mask_old(self.matrix_all[i, ...])
+            # mask_show = self.reshape_mask(self.matrix_all[i, ...])  # todo implement this now
             cv2.imshow(self.window, np.uint8(mask_show * 255))
             # show the window (for the display time)
-            cv2.waitKey(17 * 3)
-            # time.sleep(17 * 1e-3)  # 17ms > (1/60)s, to make sure this mask is displaying before taking measurements
-            time.sleep(self.integration_time * 3)
+            cv2.waitKey(17)
+            time.sleep(60 / 1000)  # (1/60)s, to make sure this mask is displaying before we take any measurements
 
             # tell the multimeter to wait for a trigger (which happens instantly since the trigger is set to immediate)
             self.multimeter.write('INITiate')
             time.sleep(self.measurements_time)  # wait for a certain amount of time to take a multiple measurements
-
             try:
                 # fetch the data from the instruments internal storage and format them
                 buffer = np.array(self.multimeter.query('FETCh?').split(';')[0].split(','), dtype=float)
@@ -126,7 +123,7 @@ class Camera:
                 # times[i] = time.time() - start
                 numbers[i] = len(buffer)  # int(np.shape(buffer)[0])
             except UnicodeDecodeError:
-                print("u got an error, let's ignore that and move on thanks")
+                print(f"got a UnicodeDecodeError on mask {i}, let's ignore that and repeat this mask")
                 i -= 1
             i += 1
 
@@ -139,13 +136,12 @@ class Camera:
 
     def reshape_mask(self, mask):
         # reshape to be 2D and square, rotate 45, integer upscale, pad to be rectangular, rotate 90, invert (1 - mask)
-        # return 1 - np.rot90(np.pad(np.kron(
-        #     mask.reshape(self.resolution), np.ones((self.factor, self.factor * 2))
-        # ), ((0, 0), (int(self.pad_width / 2), int(self.pad_width / 2)))), axes=(0, 1))  # 1976x608
-        mask = np.asarray(rotate(mask.reshape(self.resolution), angle=45), dtype=np.int_)
-        return 1 - np.rot90(np.pad(np.kron(
-            mask, np.ones((self.factor, self.factor * 2))
-        ), ((0, 0), (int(self.pad_width / 2), int(self.pad_width / 2)))), axes=(0, 1))  # 1976x608
+        mask = my_45(mask.reshape(self.resolution))
+        mask = np.pad(np.kron(
+            mask, np.ones((self.factor, self.factor))
+        ), ((0, 0), (int(self.pad_width / 2), int(self.pad_width / 2))))
+        return mask
+        # return 1 - np.rot90(mask, axes=(0, 1))  # todo does it need this rotation after all?
 
     def reshape_mask_old(self, mask):  # no 45 degree rotation to eliminate grid artefact, also readable code!
         # turn 32x32 masks into 608x1216 by integer scaling
@@ -172,7 +168,7 @@ class Camera:
         # MINimum PLC = 0.02, so a measurement happens every 0.02 * (1 / 50) = 0.0004 seconds, a rate of 2.5kHz
 
         # turn the screen off so we don't get light from it affecting the measurements
-        self.multimeter.write('DISPlay OFF')  # todo un-comment
+        self.multimeter.write('DISPlay OFF')
 
         # set the trigger source to internal, and immediate, and set the trigger delay to auto
         self.multimeter.write('TRIGger:SOURce IMMediate')
@@ -186,7 +182,7 @@ class Camera:
         # close the cv2 fullscreen window
         cv2.destroyAllWindows()
 
-        self.multimeter.write('DISPlay ON')  # todo do we need this
+        self.multimeter.write('DISPlay ON')
 
         # clear and close the instance of the instrument, and close the resource manager
         self.multimeter.write('*CLS')  # tell the multimeter to reset
@@ -194,6 +190,26 @@ class Camera:
         self.multimeter.clear()
         self.multimeter.close()
         self.rm.close()
+
+
+def my_45(mask):
+    n = mask.shape[0]  # mask is n x n
+    my_mask = np.zeros([2 * n - 1, n])  # my_mask is (2n - 1) x n
+
+    # ---- first rows ----
+    for diagonal in range(n):  # this overwrites row -1, but as long as it is done first, that's not a problem
+        for i in range(diagonal):
+            my_mask[diagonal - 1, i + 1 + int((n - 1 - diagonal) / 2)] = mask[i, n + i - diagonal]
+
+    # ---- middle row ----
+    for i in range(n):  # diagonal = n
+        my_mask[n - 1, i] = mask[i, i]
+
+    # ---- last  rows ----
+    for d in range(n - 1):  # diagonal = 2 * n - (d + 1)
+        for i in range(d + 1):
+            my_mask[2 * (n - 1) - d, -i + int((n + d) / 2)] = mask[n - 1 - i, d - i]
+    return my_mask
 
 
 def set_up_mask_output():
