@@ -13,6 +13,14 @@ def rotating_masks(resolution):
     matrix_all[1::2, ...] = (1 - matrix) / 2   # 0 & 1
     for i, e in enumerate(matrix_all):
         mask = e.reshape(resolution)
+        # mask[0, 0] = 1#todo remove
+        # mask[1, 0] = 2
+        # mask[2, 0] = 3
+        # mask[3, 0] = 4
+        mask[0, 0] = 1
+        mask[0, 1] = 2
+        mask[0, 2] = 3
+        mask[0, 3] = 4
         mask_45 = rotate(mask, angle=45)
         mask_mine = my_45(mask)
         big = np.zeros([max(mask.shape[0], mask_45.shape[0], mask_mine.shape[0]),
@@ -26,46 +34,33 @@ def rotating_masks(resolution):
 
 
 def my_45(mask):
-    # i = dim 0 = up/down
-    # j = dim 1 = left/right
+    # i = dim 0 = up/down. top = 0, bottom = max
+    # j = dim 1 = left/right. left = 0, right = max
 
     n = mask.shape[0]  # mask is n x n
     my_mask = np.zeros([2 * n - 1, n])  # my_mask is (2n - 1) x n
 
     # ---- first rows ----
-    for diagonal in range(n - 1):
+    for diagonal in range(n):
         row = np.zeros([n])
-        for j in range(diagonal):
-            i = diagonal - j  # condition: i + j = diagonal
-            if i < n and -j < n:
-                if diagonal % 2 == 0:  # even
-                    # pad with an extra zero on the left
-                    row[j - diagonal] = mask[i, -j]
-                else:  # odd
-                    # pad equally on the left and right
-                    row[j - diagonal + 1] = mask[i, -j]
-        my_mask[diagonal, :] = row
+        for i in range(diagonal):
+            j = diagonal - 1 - i  # condition: i + j = diagonal - 1
+            row[i + 1 + int((n - 1 - diagonal) / 2)] = mask[-i, n - 1 - j]
+        my_mask[diagonal - 1, :] = row
 
     # ---- middle row ----
     row = np.zeros([n])
     for j in range(n):
         i = j
-        row[i] = mask[i, j]
+        row[i] = mask[-i, j]
     my_mask[n - 1, :] = row
 
     # ---- last  rows ----
-    for d in range(n - 1):
+    for d in range(n):
         diagonal = d + n
         row = np.zeros([n])
-        for j in range(diagonal):  # todo completely copied from the first n
-            i = diagonal - j  # condition: i + j = diagonal
-            if i < n and j < n:
-                if diagonal % 2 == 0:  # even
-                    # pad with an extra zero on the left
-                    row[j] = mask[i, -j]
-                else:  # odd
-                    # pad equally on the left and right
-                    row[j] = mask[i, -j]
-        # i = 2 * n - 1 - diagonal  # condition: i + j = 2n - 1 - diagonal
-        my_mask[diagonal, :] = row
+        for i in range(diagonal):
+            j = diagonal - 1 - i  # condition: i + j = diagonal - 1
+            row[i + 1 + int((n - 1 - diagonal) / 2)] = mask[-i, n - 1 - j]
+        my_mask[diagonal - 1, :] = row
     return my_mask
