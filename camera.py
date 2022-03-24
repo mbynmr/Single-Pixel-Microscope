@@ -136,14 +136,14 @@ class Camera:
         return measurements
 
     def reshape_mask(self, mask):
+        from rotating_stuff import my_45  # todo move to an appropriate location
         # reshape to be 2D and square, rotate 45, integer upscale, pad to be rectangular, rotate 90, invert (1 - mask)
-        # return 1 - np.rot90(np.pad(np.kron(
-        #     mask.reshape(self.resolution), np.ones((self.factor, self.factor * 2))
-        # ), ((0, 0), (int(self.pad_width / 2), int(self.pad_width / 2)))), axes=(0, 1))  # 1976x608
-        mask = np.asarray(rotate(mask.reshape(self.resolution), angle=45), dtype=np.int_)
-        return 1 - np.rot90(np.pad(np.kron(
-            mask, np.ones((self.factor, self.factor * 2))
-        ), ((0, 0), (int(self.pad_width / 2), int(self.pad_width / 2)))), axes=(0, 1))  # 1976x608
+        mask = my_45(mask.reshape(self.resolution))
+        mask = np.pad(np.kron(
+            mask, np.ones((self.factor, self.factor))
+        ), ((0, 0), (int(self.pad_width / 2), int(self.pad_width / 2))))
+        return mask
+        # return 1 - np.rot90(mask, axes=(0, 1))  # todo does it need this rotation after all?
 
     def reshape_mask_old(self, mask):  # no 45 degree rotation to eliminate grid artefact, also readable code!
         # turn 32x32 masks into 608x1216 by integer scaling
