@@ -1,7 +1,6 @@
 # from notify_run import Notify
 
 from noise_and_undersampling import noise_and_undersampling
-from rotating_stuff import rotating_masks
 # from camera import Camera
 
 # image resizer: ffmpeg -i mario.png -vf scale=128:-1 mario128.png
@@ -19,7 +18,7 @@ from rotating_stuff import rotating_masks
 
 
 def main():
-    power = int(3)  # 4: 16x16, 5: 32x32, 6: 64x64, 7: 128x128, 8: 256x256
+    power = int(5)  # 4: 16x16, 5: 32x32, 6: 64x64, 7: 128x128, 8: 256x256
 
     xplc_index = int(2)  # 0 to 3: [0.02, 0.1, 1, 10]
     measurements_per_mask = int(3)
@@ -29,8 +28,7 @@ def main():
     method = 'Walsh'
     # method = 'Random'
 
-    rotating_masks([2 ** power, 2 ** power])
-    # noise_and_undersampling([2 ** power, 2 ** power])
+    noise_and_undersampling([2 ** power, 2 ** power])
     return  # todo comment out
 
     try:

@@ -2,7 +2,6 @@ import time
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.linalg import hadamard
-from scipy.ndimage import rotate
 import cv2
 import pyvisa as visa
 from tqdm import tqdm
@@ -94,8 +93,8 @@ class Camera:
 
         i = 0
         while i < 2 * int(self.matrix_all.shape[0] * self.frac / 2):
-            # mask_show = self.reshape_mask_old(self.matrix_all[i, ...])
-            mask_show = self.reshape_mask(self.matrix_all[i, ...])
+            mask_show = self.reshape_mask_old(self.matrix_all[i, ...])
+            # mask_show = self.reshape_mask(self.matrix_all[i, ...])  # todo implement this now
             cv2.imshow(self.window, np.uint8(mask_show * 255))
             # show the window (for the display time)
             cv2.waitKey(17)
@@ -136,7 +135,6 @@ class Camera:
         return measurements
 
     def reshape_mask(self, mask):
-        from rotating_stuff import my_45  # todo move to an appropriate location
         # reshape to be 2D and square, rotate 45, integer upscale, pad to be rectangular, rotate 90, invert (1 - mask)
         mask = my_45(mask.reshape(self.resolution))
         mask = np.pad(np.kron(
@@ -192,6 +190,26 @@ class Camera:
         self.multimeter.clear()
         self.multimeter.close()
         self.rm.close()
+
+
+def my_45(mask):
+    n = mask.shape[0]  # mask is n x n
+    my_mask = np.zeros([2 * n - 1, n])  # my_mask is (2n - 1) x n
+
+    # ---- first rows ----
+    for diagonal in range(n):  # this overwrites row -1, but as long as it is done first, that's not a problem
+        for i in range(diagonal):
+            my_mask[diagonal - 1, i + 1 + int((n - 1 - diagonal) / 2)] = mask[i, n + i - diagonal]
+
+    # ---- middle row ----
+    for i in range(n):  # diagonal = n
+        my_mask[n - 1, i] = mask[i, i]
+
+    # ---- last  rows ----
+    for d in range(n - 1):  # diagonal = 2 * n - (d + 1)
+        for i in range(d + 1):
+            my_mask[2 * (n - 1) - d, -i + int((n + d) / 2)] = mask[n - 1 - i, d - i]
+    return my_mask
 
 
 def set_up_mask_output():
