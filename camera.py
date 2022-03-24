@@ -18,9 +18,14 @@ class Camera:
         self.ordering = ordering
 
         pixels = np.asarray(self.resolution).prod()  # 32*32 = 1024
-        DMD_resolution = [608, 684]
+        DMD_resolution = [684, 608]
+        HDMI_resolution = DMD_resolution[::-1]
 
-        self.factor = int(DMD_resolution[0] / (self.resolution[0] * 2 ** (1 / 2)))
+        self.factor = int((HDMI_resolution[1] + 1) / (self.resolution[0] * 2))
+        self.pad = [int((HDMI_resolution[0] - (self.factor * self.resolution[1])) / 2),
+                    int((HDMI_resolution[1] - (self.factor * self.resolution[1] * 2 - 1)) / 2)]
+        # todo odd padding makes us 1 pixel off
+        # self.factor = int(DMD_resolution[0] / self.resolution[0])
         # todo factor: floor, and pad vertically to stop rounding
         self.pad_width = int(DMD_resolution[1] * 2 - np.kron(
             np.zeros(self.resolution), np.ones((self.factor, self.factor * 2))).shape[0])
@@ -30,10 +35,10 @@ class Camera:
             np.zeros(self.resolution), np.ones((self.factor_old, self.factor_old * 2))).shape[0])
         # pad_width_old = 760
 
-        if self.ordering == 'Hadamard':  # Hadamard matrix
+        if self.ordering == 'Hadamard_Natural':  # Hadamard matrix
             self.matrix = hadamard(pixels)
             # self.hadamard_all = 1 - self.hadamard_all  # todo check if 1 is toward the sample and 0 is away or not
-        elif self.ordering == 'Walsh':  # Walsh ordering Hadamard matrix
+        elif self.ordering == 'Hadamard_Walsh':  # Walsh ordering Hadamard matrix
             self.matrix = Walsh(self.resolution[0], hadamard(pixels))
         elif self.ordering == 'Random':
             self.matrix = (np.random.randint(low=0, high=2, size=[pixels, pixels]) - 0.5) * 2
@@ -42,9 +47,19 @@ class Camera:
         else:
             raise NotImplementedError(f"there is no '{ordering}' matrix")
 
-        self.matrix_all = np.zeros([pixels * 2, pixels])
-        self.matrix_all[0::2, ...] = (1 + self.matrix) / 2  # 1 & 0
-        self.matrix_all[1::2, ...] = (1 - self.matrix) / 2  # 0 & 1
+        matrix_both = np.zeros([pixels * 2, pixels])
+        matrix_both[0::2, ...] = (1 + self.matrix) / 2  # 1 & 0
+        matrix_both[1::2, ...] = (1 - self.matrix) / 2  # 0 & 1
+
+        try:
+            self.matrix_all = np.load(f"store/matrix_{self.resolution[0]}_{self.ordering}.npy")
+        except FileNotFoundError:
+            self.matrix_all = np.zeros([pixels * 2, self.resolution[0], self.resolution[1]])  # (self.resolution[0] * 2 - 1)
+            # 2x number of masks, each with length (n x (2n - 1))
+            for i, mask in tqdm(enumerate(matrix_both)):
+                self.matrix_all[i, ...] = (mask.reshape(self.resolution))
+                # self.matrix_all[i, ...] = my_45(mask.reshape(self.resolution))
+            np.save(f"store/matrix_{self.resolution[0]}_{self.ordering}.npy", self.matrix_all)
 
         # set up fullscreen cv2 output (masks on the DMD)
         self.window = set_up_mask_output()
@@ -93,12 +108,12 @@ class Camera:
 
         i = 0
         while i < 2 * int(self.matrix_all.shape[0] * self.frac / 2):
-            mask_show = self.reshape_mask_old(self.matrix_all[i, ...])
-            # mask_show = self.reshape_mask(self.matrix_all[i, ...])  # todo implement this now
-            cv2.imshow(self.window, np.uint8(mask_show * 255))
+            # mask_show = self.reshape_mask_old(self.matrix_all[i, ...])
+            cv2.imshow(self.window, np.uint8(self.reshape_mask(self.matrix_all[i, ...]) * 255))
             # show the window (for the display time)
             cv2.waitKey(17)
-            time.sleep(60 / 1000)  # (1/60)s, to make sure this mask is displaying before we take any measurements
+            time.sleep(2 * 60 / 1000)  # (1/60)s, to make sure this mask is displaying before we take any measurements
+            # todo timing
 
             # tell the multimeter to wait for a trigger (which happens instantly since the trigger is set to immediate)
             self.multimeter.write('INITiate')
@@ -114,7 +129,6 @@ class Camera:
                         i -= 1
                         print(f"redoing mask {i}")
                         break
-                        # print(f"{i}, deviation too big, {np.shape(buffer)}")
                     time.sleep(self.integration_time)
                     # string = self.multimeter.query('FETCh?')
                     buffer = np.array(self.multimeter.query('FETCh?').split(';')[0].split(','), dtype=float)
@@ -136,12 +150,12 @@ class Camera:
 
     def reshape_mask(self, mask):
         # reshape to be 2D and square, rotate 45, integer upscale, pad to be rectangular, rotate 90, invert (1 - mask)
-        mask = my_45(mask.reshape(self.resolution))
-        mask = np.pad(np.kron(
-            mask, np.ones((self.factor, self.factor))
-        ), ((0, 0), (int(self.pad_width / 2), int(self.pad_width / 2))))
-        return mask
-        # return 1 - np.rot90(mask, axes=(0, 1))  # todo does it need this rotation after all?
+        # mask = np.kron(mask, np.ones((self.factor, self.factor)))  # mask is (n tall x 2n-1 wide) * self.factor
+        # mask = np.rot90(my_45(mask), axes=(0, 1))
+        # mask = 1 - np.pad(mask, ((self.pad[0], self.pad[0]), (self.pad[1], self.pad[1] + 1)))  # 1 - pad
+        # return mask
+        return 1 - np.pad(np.rot90(my_45(np.kron(mask, np.ones((self.factor, self.factor)))), axes=(0, 1)),
+                          ((self.pad[0], self.pad[0]), (self.pad[1], self.pad[1] + 1)))
 
     def reshape_mask_old(self, mask):  # no 45 degree rotation to eliminate grid artefact, also readable code!
         # turn 32x32 masks into 608x1216 by integer scaling
@@ -209,6 +223,7 @@ def my_45(mask):
     for d in range(n - 1):  # diagonal = 2 * n - (d + 1)
         for i in range(d + 1):
             my_mask[2 * (n - 1) - d, -i + int((n + d) / 2)] = mask[n - 1 - i, d - i]
+
     return my_mask
 
 
