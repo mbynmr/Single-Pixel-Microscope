@@ -1,7 +1,7 @@
-# from notify_run import Notify
+from notify_run import Notify
 
-from noise_and_undersampling import noise_and_undersampling
-# from camera import Camera
+# from noise_and_undersampling import noise_and_undersampling
+from camera import Camera
 
 # image resizer: ffmpeg -i mario.png -vf scale=128:-1 mario128.png
 # xmodmap -e "keycode 49 = backslash"
@@ -27,9 +27,6 @@ def main():
     # method = 'Hadamard'
     method = 'Walsh'
     # method = 'Random'
-
-    noise_and_undersampling([2 ** power, 2 ** power])
-    return  # todo comment out
 
     try:
         resolution = [2 ** power, 2 ** power]
