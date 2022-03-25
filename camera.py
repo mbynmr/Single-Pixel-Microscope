@@ -58,7 +58,6 @@ class Camera:
             # 2x number of masks, each with length (n x (2n - 1))
             for i, mask in tqdm(enumerate(matrix_both)):
                 self.matrix_all[i, ...] = (mask.reshape(self.resolution))
-                # self.matrix_all[i, ...] = my_45(mask.reshape(self.resolution))
             np.save(f"store/matrix_{self.resolution[0]}_{self.ordering}.npy", self.matrix_all)
 
         # set up fullscreen cv2 output (masks on the DMD)
@@ -104,38 +103,44 @@ class Camera:
         deviations = np.zeros([self.matrix_all.shape[0]])
         numbers = np.zeros([self.matrix_all.shape[0]])
         # times = np.zeros([self.matrix_all.shape[0]])
-        # for i, mask in enumerate(self.matrix_all[:, ...]):  # todo are we taking the wrong dimension?
 
+        next_mask = np.uint8(self.reshape_mask(self.matrix_all[0, ...]) * 255)
         i = 0
         while i < 2 * int(self.matrix_all.shape[0] * self.frac / 2):
-            # mask_show = self.reshape_mask_old(self.matrix_all[i, ...])
-            cv2.imshow(self.window, np.uint8(self.reshape_mask(self.matrix_all[i, ...]) * 255))
+            cv2.imshow(self.window, next_mask)
             # show the window (for the display time)
             cv2.waitKey(17)
-            time.sleep(2 * 60 / 1000)  # (1/60)s, to make sure this mask is displaying before we take any measurements
-            # todo timing
+            time.sleep(1 * (1 / 60))  # (1/60)s, to make sure this mask is displaying before we take any measurements
+            # todo 2 * 60
 
             # tell the multimeter to wait for a trigger (which happens instantly since the trigger is set to immediate)
             self.multimeter.write('INITiate')
-            time.sleep(self.measurements_time)  # wait for a certain amount of time to take a multiple measurements
+            start = time.time()
+            if i < self.matrix_all.shape[0] - 1:
+                next_mask = np.uint8(self.reshape_mask(self.matrix_all[i + 1, ...]) * 255)
+            sleep_time = self.measurements_time - (time.time() - start)
+            if sleep_time > 0:  # wait for the remaining amount of time to take a multiple measurements
+                print(f"slept for {sleep_time}s on mask {i}")
+                time.sleep(sleep_time)
             try:
                 # fetch the data from the instruments internal storage and format them
                 buffer = np.array(self.multimeter.query('FETCh?').split(';')[0].split(','), dtype=float)
                 deviations[i] = np.std(buffer)
                 measurements[i] = np.mean(buffer)
+                numbers[i] = len(buffer)  # int(np.shape(buffer)[0])
                 while deviations[i] > 0.05 * measurements[i] or len(buffer) < self.minimum_measurements_per_mask:
                     # if deviations[i] > 0.05 * measurements[i]:
                     if np.shape(buffer)[0] > 10 * self.minimum_measurements_per_mask:
-                        i -= 1
                         print(f"redoing mask {i}")
+                        i -= 1
                         break
                     time.sleep(self.integration_time)
                     # string = self.multimeter.query('FETCh?')
                     buffer = np.array(self.multimeter.query('FETCh?').split(';')[0].split(','), dtype=float)
                     deviations[i] = np.std(buffer)
                     measurements[i] = np.mean(buffer)
-                # times[i] = time.time() - start
-                numbers[i] = len(buffer)  # int(np.shape(buffer)[0])
+                    numbers[i] = len(buffer)  # int(np.shape(buffer)[0])
+                    # times[i] = time.time() - start
             except UnicodeDecodeError:
                 print(f"got a UnicodeDecodeError on mask {i}, let's ignore that and repeat this mask")
                 i -= 1
@@ -149,13 +154,9 @@ class Camera:
         return measurements
 
     def reshape_mask(self, mask):
-        # reshape to be 2D and square, rotate 45, integer upscale, pad to be rectangular, rotate 90, invert (1 - mask)
-        # mask = np.kron(mask, np.ones((self.factor, self.factor)))  # mask is (n tall x 2n-1 wide) * self.factor
-        # mask = np.rot90(my_45(mask), axes=(0, 1))
-        # mask = 1 - np.pad(mask, ((self.pad[0], self.pad[0]), (self.pad[1], self.pad[1] + 1)))  # 1 - pad
-        # return mask
-        return 1 - np.pad(np.rot90(my_45(np.kron(mask, np.ones((self.factor, self.factor)))), axes=(0, 1)),
-                          ((self.pad[0], self.pad[0]), (self.pad[1], self.pad[1] + 1)))
+        # reshape by integer upscale, rotate 45, rotate 90, pad to be the correct HDMI shape
+        return np.pad(np.rot90(my_45(np.kron(mask, np.ones((self.factor, self.factor)))), axes=(0, 1)),
+                      ((self.pad[0], self.pad[0]), (self.pad[1], self.pad[1] + 1)))
 
     def reshape_mask_old(self, mask):  # no 45 degree rotation to eliminate grid artefact, also readable code!
         # turn 32x32 masks into 608x1216 by integer scaling
