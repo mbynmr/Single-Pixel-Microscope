@@ -45,20 +45,17 @@ class Camera:
             # for i, column in enumerate(self.matrix):  # todo make sure 50/50 1/-1
             #     self.matrix[i, ...] = column
         else:
-            raise NotImplementedError(f"there is no '{ordering}' matrix")
+            raise NotImplementedError(f"there is no '{self.ordering}' matrix")
 
         matrix_both = np.zeros([pixels * 2, pixels])
         matrix_both[0::2, ...] = (1 + self.matrix) / 2  # 1 & 0
         matrix_both[1::2, ...] = (1 - self.matrix) / 2  # 0 & 1
 
-        try:
-            self.matrix_all = np.load(f"store/matrix_{self.resolution[0]}_{self.ordering}.npy")
-        except FileNotFoundError:
-            self.matrix_all = np.zeros([pixels * 2, self.resolution[0], self.resolution[1]])  # (self.resolution[0] * 2 - 1)
-            # 2x number of masks, each with length (n x (2n - 1))
-            for i, mask in tqdm(enumerate(matrix_both)):
-                self.matrix_all[i, ...] = (mask.reshape(self.resolution))
-            np.save(f"store/matrix_{self.resolution[0]}_{self.ordering}.npy", self.matrix_all)
+        # self.matrix_all = np.zeros([pixels * 2, self.resolution[0], self.resolution[1]])
+        # # 2x number of masks, each with length (n x n)
+        # for i, mask in tqdm(enumerate(matrix_both)):
+        #     self.matrix_all[i, ...] = (mask.reshape(self.resolution))
+        self.matrix_all = matrix_both.reshape([2 * pixels, *self.resolution])  # todo check this reshapes how we think!
 
         # set up fullscreen cv2 output (masks on the DMD)
         self.window = set_up_mask_output()
@@ -73,7 +70,7 @@ class Camera:
         self.integration_time = plc * self.xplc  # in seconds
         self.measurements_time = self.integration_time * self.minimum_measurements_per_mask  # in seconds
 
-    def take_picture(self, pause_time):
+    def take_picture(self, pause_time=15):
         measurements_p_and_m = self.measure(pause_time)
         # measurements_p_and_m = np.loadtxt("outputs/measurements.txt")
         measurements = measurements_p_and_m[0::2, ...] - measurements_p_and_m[1::2, ...]  # differential measurement
@@ -111,7 +108,7 @@ class Camera:
             # show the window (for the display time)
             cv2.waitKey(17)
             time.sleep(1 * (1 / 60))  # (1/60)s, to make sure this mask is displaying before we take any measurements
-            # todo 2 * 60
+            # todo 2 * (1/ 60)? How low can we push this
 
             # tell the multimeter to wait for a trigger (which happens instantly since the trigger is set to immediate)
             self.multimeter.write('INITiate')
@@ -122,6 +119,8 @@ class Camera:
             if sleep_time > 0:  # wait for the remaining amount of time to take a multiple measurements
                 print(f"slept for {sleep_time}s on mask {i}")
                 time.sleep(sleep_time)
+            else:
+                print(f"did not sleep on mask {i}")  # todo remove one or both of these prints
             try:
                 # fetch the data from the instruments internal storage and format them
                 buffer = np.array(self.multimeter.query('FETCh?').split(';')[0].split(','), dtype=float)
@@ -154,9 +153,10 @@ class Camera:
         return measurements
 
     def reshape_mask(self, mask):
-        # reshape by integer upscale, rotate 45, rotate 90, pad to be the correct HDMI shape
+        # reshape by: integer upscale, diamond grid correction, rotate 90, pad to be the correct HDMI shape
         return np.pad(np.rot90(my_45(np.kron(mask, np.ones((self.factor, self.factor)))), axes=(0, 1)),
                       ((self.pad[0], self.pad[0]), (self.pad[1], self.pad[1] + 1)))
+        # todo is the 90 degree rotation necessary? was it upside down? this could be corrected on the final image?
 
     def reshape_mask_old(self, mask):  # no 45 degree rotation to eliminate grid artefact, also readable code!
         # turn 32x32 masks into 608x1216 by integer scaling
@@ -209,21 +209,16 @@ class Camera:
 
 def my_45(mask):
     n = mask.shape[0]  # mask is n x n
+    m = n - 1  # ((2 * n - 1) - 1) / 2 = m, which is the number of diagonals above (or below) the middle
     my_mask = np.zeros([2 * n - 1, n])  # my_mask is (2n - 1) x n
 
-    # ---- first rows ----
-    for diagonal in range(n):  # this overwrites row -1, but as long as it is done first, that's not a problem
-        for i in range(diagonal):
-            my_mask[diagonal - 1, i + 1 + int((n - 1 - diagonal) / 2)] = mask[i, n + i - diagonal]
+    my_mask[m, :] = np.diag(mask, k=0)  # middle row
 
-    # ---- middle row ----
-    for i in range(n):  # diagonal = n
-        my_mask[n - 1, i] = mask[i, i]
+    for d in range(m):  # first rows
+        my_mask[d, int(n / 2 - d / 2):int(n / 2 - d / 2 + d + 1)] = np.diag(mask, k=(m - d))
 
-    # ---- last  rows ----
-    for d in range(n - 1):  # diagonal = 2 * n - (d + 1)
-        for i in range(d + 1):
-            my_mask[2 * (n - 1) - d, -i + int((n + d) / 2)] = mask[n - 1 - i, d - i]
+    for d in range(m):  # last rows
+        my_mask[2 * m - d, int(n / 2 - d / 2):int(n / 2 - d / 2 + d + 1)] = np.diag(mask, k=(d - m))
 
     return my_mask
 
