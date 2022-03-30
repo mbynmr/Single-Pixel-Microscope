@@ -66,7 +66,6 @@ class Camera:
         # prepare the multimeter for a run of measurements
         self.reset_multimeter()
         # set the measurement time
-        # self.measurements_time = (self.display_time_ms * 3) / 1000  # in seconds, approximately 3 frames long
         self.integration_time = plc * self.xplc  # in seconds
         self.measurements_time = self.integration_time * self.minimum_measurements_per_mask  # in seconds
 
@@ -86,9 +85,9 @@ class Camera:
 
     def reconstruct(self, measurements):
         image = self.matrix @ measurements
-        image = image - np.amin(image)
-        image = image / np.amax(image)
-        return np.uint8(image.reshape(self.resolution)[..., ::-1] * 255)
+        return np.uint8((
+                                (image - np.amin(image)) / (np.amax(image) - np.amin(image))
+                        ).reshape(self.resolution)[..., ::-1] * 255)
 
     def measure(self, pause_time):
         # the first cv2 display takes a while to set up, and this was causing problems with the measurements
@@ -115,9 +114,10 @@ class Camera:
             start = time.time()
             if i < self.matrix_all.shape[0] - 1:
                 next_mask = np.uint8(self.reshape_mask(self.matrix_all[i + 1, ...]) * 255)
+                # next_mask = np.uint8(np.ones([608, 684]) * 255)
             sleep_time = self.measurements_time - (time.time() - start)
             if sleep_time > 0:  # wait for the remaining amount of time to take a multiple measurements
-                print(f"slept for {sleep_time}s on mask {i}")
+                # print(f"slept for {sleep_time}s on mask {i}")
                 time.sleep(sleep_time)
             else:
                 print(f"did not sleep on mask {i}")  # todo remove one or both of these prints
@@ -127,9 +127,9 @@ class Camera:
                 deviations[i] = np.std(buffer)
                 measurements[i] = np.mean(buffer)
                 numbers[i] = len(buffer)  # int(np.shape(buffer)[0])
+                # times[i] = time.time() - start
                 while deviations[i] > 0.05 * measurements[i] or len(buffer) < self.minimum_measurements_per_mask:
-                    # if deviations[i] > 0.05 * measurements[i]:
-                    if np.shape(buffer)[0] > 10 * self.minimum_measurements_per_mask:
+                    if np.shape(buffer)[0] > 100 * self.minimum_measurements_per_mask:  # todo 100 *
                         print(f"redoing mask {i}")
                         i -= 1
                         break
@@ -149,7 +149,7 @@ class Camera:
         np.savetxt("outputs/measurements.txt", measurements)
         np.savetxt("outputs/deviations.txt", deviations)
         # np.savetxt("outputs/deviations.txt", deviations)
-        # np.savetxt("outputs/times.txt", times[:200])
+        # np.savetxt("outputs/times.txt", times)
         return measurements
 
     def reshape_mask(self, mask):
