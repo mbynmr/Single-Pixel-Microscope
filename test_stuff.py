@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.ndimage import rotate  # todo remove
 from tqdm import tqdm
 
 from image_reconstruct import Reconstructor, add_noise, reconstruct_with_other_images_best_masks
@@ -22,7 +21,7 @@ def rotating_masks(resolution):
     matrix_all[1::2, ...] = (1 - matrix) / 2   # 0 & 1
     for i, e in enumerate(matrix_all[100:102, ...]):
         mask = e.reshape(resolution)
-        # mask = (np.arange(np.prod(resolution)) / np.prod(resolution)).reshape(resolution)  # todo remov
+        # mask = (np.arange(np.prod(resolution)) / np.prod(resolution)).reshape(resolution)  # remov
         # mask = mask + 0.25 * np.diag(np.ones(mask.shape[0]))
         mask_mine_old = my_45_old(mask)
         # for _ in tqdm(range(100)):

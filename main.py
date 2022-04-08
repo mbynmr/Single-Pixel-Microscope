@@ -18,15 +18,15 @@ from camera import Camera
 
 
 def main():
-    power = int(5)  # 4: 16x16, 5: 32x32, 6: 64x64, 7: 128x128, 8: 256x256
+    power = int(6)  # 4: 16x16, 5: 32x32, 6: 64x64, 7: 128x128, 8: 256x256
 
     xplc_index = int(2)  # 0 to 3: [0.02, 0.1, 1, 10]
     measurements_per_mask = int(3)
 
     fraction = 1
-    method = 'Hadamard_Natural'
+    # method = 'Hadamard_Natural'
     # method = 'Hadamard_Walsh'
-    # method = 'Random'
+    method = 'Random'
 
     # rotating_masks(resolution=[2 ** power, 2 ** power])
     # return
@@ -37,7 +37,7 @@ def main():
         xplc = [0.02, 0.1, 1, 10]  # these are the only options for the multimeter
 
         c = Camera(resolution, xplc[xplc_index], measurements_per_mask, fraction, method)
-        c.take_picture(pause_time=5)  # input pause time in seconds before the masks are shown
+        c.take_picture(pause_time=25)  # input pause time in seconds before the masks are shown
         c.close()
     finally:
         # notify = Notify()

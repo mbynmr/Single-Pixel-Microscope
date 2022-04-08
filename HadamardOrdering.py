@@ -33,3 +33,23 @@ def Walsh(px, hadamard_matrix):
         # n_w_array[n_h]= n_w
 
     return walsh_matrix
+
+
+def random_masks(px, frac):
+    
+    #num_patterns = int(frac*px**2) if int(frac*px**2)%2==0 else int(frac*px**2 + 1)
+    
+    if (px**2)%2 == 1:
+        print("can't do 50/50 masks")
+    else:
+        num_patterns = int(frac*px**2)
+        measurement_matrix = np.zeros((num_patterns, px**2))
+        
+        row = np.ones(px**2)
+        row[:int(px**2/2)] = -1
+        
+        for i in range(num_patterns):
+            np.random.shuffle(row)
+            measurement_matrix[i, :] = row
+        
+    return measurement_matrix
