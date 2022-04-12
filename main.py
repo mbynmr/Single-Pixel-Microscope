@@ -1,7 +1,10 @@
-from notify_run import Notify
+# from notify_run import Notify
 
-# from test_stuff import noise_and_undersampling, rotating_masks, fourier_masks
-from camera import Camera
+from test_stuff import noise_and_undersampling, rotating_masks, fourier_masks
+from image_reconstruct import Reconstructor
+# from camera import Camera
+import numpy as np
+import matplotlib.pyplot as plt
 
 # image resizer: ffmpeg -i mario.png -vf scale=128:-1 mario128.png
 # image type converter: ffmpeg -i image.webp image.gif
@@ -17,7 +20,7 @@ from camera import Camera
 
 
 def main():
-    power = int(6)  # 4: 16x16, 5: 32x32, 6: 64x64, 7: 128x128, 8: 256x256
+    power = int(4)  # 4: 16x16, 5: 32x32, 6: 64x64, 7: 128x128, 8: 256x256
 
     xplc_index = int(2)  # 0 to 3: [0.02, 0.1, 1, 10]
     measurements_per_mask = int(3)
@@ -27,21 +30,32 @@ def main():
     # method = 'Hadamard_Walsh'
     # method = 'Random'
 
+    from HadamardOrdering import random_masks
+    masks = random_masks(pixels=np.asarray([2 ** power, 2 ** power]).prod(), frac=1, seed=10)
+    print(masks[0:4, 0:4])
+    return
     # fourier_masks(resolution=[2 ** power, 2 ** power])
+    # r = Reconstructor(resolution=[2 ** power, 2 ** power], method=method.split('_')[0])
+    # measurements = np.loadtxt("outputs/measurements.txt")
+    # measurements = measurements[0::2] - measurements[1::2]  # differential measurement
+    # image = r.reconstruct(measurements)
+    # image = image - np.amin(image)
+    # image = image + np.amax(image)
+    # plt.imsave("outputs/reconstruct.png", image, cmap=plt.get_cmap('gray'))
     # return
 
-    try:
-        resolution = [2 ** power, 2 ** power]
-        print(f"{resolution = }")
-        xplc = [0.02, 0.1, 1, 10]  # these are the only options for the multimeter
-
-        c = Camera(resolution, xplc[xplc_index], measurements_per_mask, fraction, method)
-        c.take_picture(pause_time=5)  # input pause time in seconds before the masks are shown
-        c.close()
-    finally:
-        # notify = Notify()
-        # notify.send('Finished')
-        Notify().send('Finished')
+    # try:
+    #     resolution = [2 ** power, 2 ** power]
+    #     print(f"{resolution = }")
+    #     xplc = [0.02, 0.1, 1, 10]  # these are the only options for the multimeter
+    #
+    #     c = Camera(resolution, xplc[xplc_index], measurements_per_mask, fraction, method)
+    #     c.take_picture(pause_time=5)  # input pause time in seconds before the masks are shown
+    #     c.close()
+    # finally:
+    #     # notify = Notify()
+    #     # notify.send('Finished')
+    #     Notify().send('Finished')
 
 
 if __name__ == '__main__':

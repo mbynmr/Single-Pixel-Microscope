@@ -16,6 +16,8 @@ class Camera:
         self.minimum_measurements_per_mask = measurements
         self.frac = fraction
         self.ordering = ordering
+        self.seed = np.random.randint(999)
+        # seed_string = str(seed).zfill(3)  # todo check this
 
         pixels = np.asarray(self.resolution).prod()  # 32*32 = 1024
         DMD_resolution = [684, 608]
@@ -33,7 +35,7 @@ class Camera:
         elif self.ordering == 'Hadamard_Walsh':  # Walsh ordering Hadamard matrix
             self.matrix = Walsh(self.resolution[0], hadamard(pixels))
         elif self.ordering == 'Random':  # random 50/50 matrix
-            self.matrix = random_masks(pixels, self.frac)
+            self.matrix = random_masks(pixels, self.frac, seed=self.seed)
             matrix_both = np.zeros([int(pixels * self.frac) * 2, pixels])
         else:
             raise NotImplementedError(f"there is no '{self.ordering}' matrix")
@@ -56,12 +58,11 @@ class Camera:
         self.measurements_time = self.integration_time * self.minimum_measurements_per_mask  # in seconds
 
     def take_picture(self, pause_time=15):
-        measurements_p_and_m = self.measure(pause_time)
-        # measurements_p_and_m = np.loadtxt("outputs/measurements.txt")
-        measurements = measurements_p_and_m[0::2, ...] - measurements_p_and_m[1::2, ...]  # differential measurement
-
         # reconstruct image from measurements and masks
         if self.ordering != 'Random':
+            measurements_p_and_m = self.measure(pause_time)
+            # measurements_p_and_m = np.loadtxt("outputs/measurements.txt")
+            measurements = measurements_p_and_m[0::2] - measurements_p_and_m[1::2]  # differential measurement
             image = self.reconstruct(measurements)
             plt.imsave(f"outputs/SPC_image_{self.resolution[0]}_{self.xplc}"
                        f"_{self.minimum_measurements_per_mask}_{self.frac}_{self.ordering}.png",
@@ -69,6 +70,8 @@ class Camera:
             plt.imsave(f"outputs/SPC_image_{self.resolution[0]}_{self.xplc}"
                        f"_{self.minimum_measurements_per_mask}_{self.frac}_{self.ordering}_upscaled.png",
                        np.kron(image, np.ones((10, 10))), cmap=plt.get_cmap('gray'))  # 10x integer upscaled image
+        else:
+            self.measure(pause_time)
 
     def reconstruct(self, measurements):
         image = self.matrix @ measurements
@@ -142,13 +145,15 @@ class Camera:
             i += 1
 
         np.savetxt("outputs/numbers.txt", numbers, fmt='%d')
-        np.savetxt("outputs/measurements.txt", measurements)
         np.savetxt("outputs/deviations.txt", deviations)
         # np.savetxt("outputs/deviations.txt", deviations)
         # np.savetxt("outputs/times.txt", times)
-        if self.ordering == 'Random':
-            np.savetxt("outputs/meas_matrix.txt", self.matrix, fmt='%d')  # integer format makes way smaller files
-        return measurements
+        if self.ordering != 'Random':
+            np.savetxt("outputs/measurements.txt", measurements)
+            return measurements
+        else:
+            np.savetxt(f"outputs/measurements_{str(self.seed).zfill(3)}.txt", measurements)
+            # np.savetxt(f"outputs/meas_matrix_{str(self.seed).zfill(3)}.txt", self.matrix, fmt='%d')
 
     def reshape_mask(self, mask):
         # reshape by: integer upscale, diamond grid correction, rotate 90, pad to be the correct HDMI shape

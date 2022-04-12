@@ -6,6 +6,7 @@ Created on Fri Mar 18 15:00:53 2022
 """
 import numpy as np
 from scipy.linalg import hadamard
+from tqdm import tqdm
 
 
 def Walsh(px, hadamard_matrix):
@@ -35,7 +36,7 @@ def Walsh(px, hadamard_matrix):
     return walsh_matrix
 
 
-def random_masks(pixels, frac):
+def random_masks(pixels, frac, seed):
     # num_patterns = int(frac*px**2) if int(frac*px**2)%2==0 else int(frac*px**2 + 1)
 
     if pixels % 2 == 1:
@@ -46,8 +47,12 @@ def random_masks(pixels, frac):
     row = np.ones(pixels)
     row[:int(pixels / 2)] = -1
 
-    for i in range(num_patterns):
-        np.random.shuffle(row)
+    rs = np.random.RandomState(seed)
+    seeds = rs.randint(low=int(0), high=int(num_patterns * 1000), size=num_patterns)
+
+    for i in tqdm(range(num_patterns)):
+        np.random.RandomState(seeds[i]).shuffle(row)
         measurement_matrix[i, :] = row
 
     return measurement_matrix
+    # rs = np.random.RandomState(seed=np.random.MT19937(np.random.SeedSequence(123456789)))
