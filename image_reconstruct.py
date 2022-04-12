@@ -23,11 +23,33 @@ class Reconstructor:
             # self.hadamard_minus = (1 - self.hadamard_mat) / 2   # 0 & 1
             self.matrix = hadamard(self.pixels)
             self.hadamard_bool = True
+        elif method == 'Fourier' or method.split('_')[0] == 'Fourier':  # Fourier basis pattern
+            self.matrix = np.zeros([self.pixels * 2, *self.resolution])  # this is 3D initially
+            offset = (1 - self.resolution) / 2
+            for m in tqdm(range(self.pixels)):
+                u = 2 * np.pi / (offset[0] + m % self.resolution[0])
+                v = 2 * np.pi / (offset[1] + m - m % self.resolution[0])
+                # todo vectorised version can be made.
+                #  make X = [range(resolution[0]), range(resolution[1])] + offset, and put it in the second 2 dimensions
+                #  make U = (find out how), and make it change over the first dimension
+                for i in range(resolution[0]):  # horizontal: x
+                    x = i + offset[0]
+                    for j in range(resolution[1]):  # vertical: y
+                        y = j + offset[1]
+                        # np.exp(2 * np.pi * 1j * (u * x + v * y))  # the whole basis
+                        self.matrix[2 * m, i, j] = np.cos(2 * np.pi * (u * x + v * y))  # real only
+                        self.matrix[2 * m + 1, i, j] = np.sin(2 * np.pi * (u * x + v * y))  # imaginary only
+                        # self.matrix[i, j] = a + b * np.cos(2 * np.pi * (u * x + v * y))  # real only??? used in paper
+            # self.matrix = self.matrix * 2 - 1  # from 0 and 1 to -1 and 1 for differential measurement
+            self.matrix = self.matrix.reshape([self.pixels * 2, self.pixels])  # reshape back to 2D
+            if method == 'Fourier_binary':  # todo binarised version of Fourier basis pattern
+                # use upsampling and Floyd-Steinberg error diffusion dithering to generate binary Fourier basis patterns
+                # dx.doi.org/10.1038/s41598-017-12228-3
+                raise NotImplementedError(f"'{method}' method is not working yet. Use '{method.split('_')[0]}' method.")
         elif method == 'random':  # random matrix
-            self.matrix = np.random.randint(low=0, high=2, size=[self.pixels, self.pixels])
-            # for i, column in enumerate(self.matrix):  # todo make sure 50/50 1/-1
+            self.matrix = np.random.randint(low=0, high=2, size=[self.pixels, self.pixels]) * 2 - 1
+            # for i, column in enumerate(self.matrix):  # todo make sure 50/50
             #     self.matrix[i, ...] = column
-            # self.matrix = np.where(self.matrix == 0, -1, 1)  # set 1 and -1 instead of 1 and 0
         else:
             raise NotImplementedError(f"there is no '{method}' method")
 

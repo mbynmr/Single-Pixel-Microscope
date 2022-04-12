@@ -10,7 +10,7 @@ import time
 def output():
     DMD_resolution = [608, 684]
     resolution = [32, 32]
-    factor = int(DMD_resolution[0] / resolution[0])  # todo floor, and pad vertically to remove rounding (e.g. 608/64)
+    factor = int(DMD_resolution[0] / resolution[0])  # floor, and pad vertically to remove rounding (e.g. 608/64)
     pixels = np.asarray(resolution).prod()  # e.g. 128*128
 
     # Hadamard matrix

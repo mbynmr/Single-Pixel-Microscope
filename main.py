@@ -1,9 +1,10 @@
 from notify_run import Notify
 
-# from test_stuff import noise_and_undersampling, rotating_masks
+# from test_stuff import noise_and_undersampling, rotating_masks, fourier_masks
 from camera import Camera
 
 # image resizer: ffmpeg -i mario.png -vf scale=128:-1 mario128.png
+# image type converter: ffmpeg -i image.webp image.gif
 # xmodmap -e "keycode 49 = backslash"
 
 # very helpful: https://github.com/cbasedlf/single_pixel_demo/blob/master/sp_demo.py
@@ -12,13 +13,11 @@ from camera import Camera
 #  always square image dimensions (128x128, 64x64, etc) - is it possible to have non-square dimensions? I think so
 #  converts input (test) images to greyscale
 #  use images as masks? may be useful for AI cases "is this a dog?" compressed sensing could do it very fast
-#  deconstruct 2 images and compare the measurements to tell how alike images are? Can't see how this is useful
-#  our camera sets minimum pixel values to min 0 & max 255, so there isn't a real-world transmission measurement
-#  non-binary masks? would that help? probably not?
+#  deconstruct 2 images and compare the measurements to tell how alike images are?
 
 
 def main():
-    power = int(5)  # 4: 16x16, 5: 32x32, 6: 64x64, 7: 128x128, 8: 256x256
+    power = int(6)  # 4: 16x16, 5: 32x32, 6: 64x64, 7: 128x128, 8: 256x256
 
     xplc_index = int(2)  # 0 to 3: [0.02, 0.1, 1, 10]
     measurements_per_mask = int(3)
@@ -28,7 +27,7 @@ def main():
     # method = 'Hadamard_Walsh'
     # method = 'Random'
 
-    # rotating_masks(resolution=[2 ** power, 2 ** power])
+    # fourier_masks(resolution=[2 ** power, 2 ** power])
     # return
 
     try:

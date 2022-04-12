@@ -33,3 +33,21 @@ def Walsh(px, hadamard_matrix):
         # n_w_array[n_h]= n_w
 
     return walsh_matrix
+
+
+def random_masks(pixels, frac):
+    # num_patterns = int(frac*px**2) if int(frac*px**2)%2==0 else int(frac*px**2 + 1)
+
+    if pixels % 2 == 1:
+        raise ValueError(f"Can't do 50/50 masks for odd numbered mask shapes: {pixels = }")
+    num_patterns = int(frac * pixels)
+    measurement_matrix = np.zeros((num_patterns, pixels))
+
+    row = np.ones(pixels)
+    row[:int(pixels / 2)] = -1
+
+    for i in range(num_patterns):
+        np.random.shuffle(row)
+        measurement_matrix[i, :] = row
+
+    return measurement_matrix
