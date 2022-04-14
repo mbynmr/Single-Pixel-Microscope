@@ -10,14 +10,13 @@ from HadamardOrdering import Walsh, random_masks
 
 
 class Camera:
-    def __init__(self, resolution, xplc, measurements, fraction, ordering):
+    def __init__(self, resolution, xplc, measurements, fraction, method):
         self.resolution = resolution
         self.xplc = xplc
         self.minimum_measurements_per_mask = measurements
         self.frac = fraction
-        self.ordering = ordering
+        self.method = method
         self.seed = np.random.randint(999)
-        # seed_string = str(seed).zfill(3)  # todo check this
 
         pixels = np.asarray(self.resolution).prod()  # 32*32 = 1024
         DMD_resolution = [684, 608]
@@ -29,21 +28,38 @@ class Camera:
         self.pad_width = int(DMD_resolution[1] * 2 - np.kron(
             np.zeros(self.resolution), np.ones((self.factor, self.factor * 2))).shape[0])
 
-        matrix_both = np.zeros([pixels * 2, pixels])
-        if self.ordering == 'Hadamard_Natural':  # Hadamard matrix
-            self.matrix = hadamard(pixels)
-        elif self.ordering == 'Hadamard_Walsh':  # Walsh ordering Hadamard matrix
-            self.matrix = Walsh(self.resolution[0], hadamard(pixels))
-        elif self.ordering == 'Random':  # random 50/50 matrix
-            self.matrix = random_masks(pixels, self.frac, seed=self.seed)
-            matrix_both = np.zeros([int(pixels * self.frac) * 2, pixels])
+        if self.method == 'Fourier' or self.method.split('_')[0] == 'Fourier':  # Fourier basis patterns
+            n = 3  # 3 or 4 step (not many reasons to choose 4)
+            self.matrix_all = np.zeros([int(pixels * n), pixels])  # this is 2D
+            for i in range(n):
+                self.matrix_all[i::n, ...] = np.real(np.fft.ifft(
+                    np.diag(np.ones(pixels)).dot(np.exp(1j * 2 * np.pi * i / n))
+                ))
+            # normalise between 0 and 1
+            self.matrix_all = self.matrix_all - np.amin(self.matrix_all, axis=0)
+            self.matrix_all = self.matrix_all / np.amax(self.matrix_all, axis=0)
+            if self.method == 'Fourier_binary':  # binarised version of Fourier basis pattern
+                # use upsampling and Floyd-Steinberg error diffusion dithering to generate binary Fourier basis patterns
+                # dx.doi.org/10.1038/s41598-017-12228-3
+                raise NotImplementedError(
+                    f"'{self.method}' method is not working yet. Use '{self.method.split('_')[0]}' method.")
         else:
-            raise NotImplementedError(f"there is no '{self.ordering}' matrix")
+            if self.method.split('_')[0] == 'Hadamard':
+                matrix_both = np.zeros([pixels * 2, pixels])
+                self.matrix = hadamard(pixels)  # 'Hadamard_Natural': Hadamard matrix
+                if self.method == 'Hadamard_Walsh':  # Walsh ordering Hadamard matrix
+                    self.matrix = Walsh(self.resolution[0], self.matrix)
+            elif self.method == 'Random':  # random 50/50 matrix
+                self.matrix = random_masks(pixels, self.frac, seed=self.seed)
+                matrix_both = np.zeros([int(pixels * self.frac) * 2, pixels])
+                self.frac = 1  # todo this means we need to do less shimmying later
+            else:
+                raise NotImplementedError(f"there is no '{self.method}' matrix")
 
-        matrix_both[0::2, ...] = (1 + self.matrix) / 2  # 1 & 0
-        matrix_both[1::2, ...] = (1 - self.matrix) / 2  # 0 & 1
+            matrix_both[0::2, ...] = (1 + self.matrix) / 2  # 1 & 0
+            matrix_both[1::2, ...] = (1 - self.matrix) / 2  # 0 & 1
 
-        self.matrix_all = matrix_both.reshape([-1, *self.resolution])
+            self.matrix_all = matrix_both.reshape([-1, *self.resolution])
 
         # set up fullscreen cv2 output (masks on the DMD)
         self.window = set_up_mask_output()
@@ -59,28 +75,36 @@ class Camera:
 
     def take_picture(self, pause_time=15):
         # reconstruct image from measurements and masks
-        if self.ordering != 'Random':
-            measurements_p_and_m = self.measure(pause_time)
-            # measurements_p_and_m = np.loadtxt("outputs/measurements.txt")
-            measurements = measurements_p_and_m[0::2] - measurements_p_and_m[1::2]  # differential measurement
-            image = self.reconstruct(measurements)
-            plt.imsave(f"outputs/SPC_image_{self.resolution[0]}_{self.xplc}"
-                       f"_{self.minimum_measurements_per_mask}_{self.frac}_{self.ordering}.png",
-                       image, cmap=plt.get_cmap('gray'))  # save image
-            plt.imsave(f"outputs/SPC_image_{self.resolution[0]}_{self.xplc}"
-                       f"_{self.minimum_measurements_per_mask}_{self.frac}_{self.ordering}_upscaled.png",
-                       np.kron(image, np.ones((10, 10))), cmap=plt.get_cmap('gray'))  # 10x integer upscaled image
-        else:
-            self.measure(pause_time)
+        measurements_p_and_m = self.measure(pause_time)
+        if self.method == 'Random':
+            # save the measurement matrix (and its seed so it can be reconstructed in python), as the matrix is random
+            np.savetxt(f"outputs/meas_matrix_{str(self.seed).zfill(3)}.txt", self.matrix, fmt='%d')
+            return
+        # measurements_p_and_m = np.loadtxt("outputs/measurements.txt")
+        measurements = measurements_p_and_m[0::2] - measurements_p_and_m[1::2]  # differential measurement
+        image = self.reconstruct(measurements)
+        plt.imsave(f"outputs/SPC_image_{self.resolution[0]}_{self.xplc}"
+                   f"_{self.minimum_measurements_per_mask}_{self.frac}_{self.method}.png",
+                   image, cmap=plt.get_cmap('gray'))  # save image
+        plt.imsave(f"outputs/SPC_image_{self.resolution[0]}_{self.xplc}"
+                   f"_{self.minimum_measurements_per_mask}_{self.frac}_{self.method}_upscaled.png",
+                   np.kron(image, np.ones((10, 10))), cmap=plt.get_cmap('gray'))  # 10x integer upscaled image
 
     def reconstruct(self, measurements):
-        image = self.matrix @ measurements
-        return np.uint8((
-                                (image - np.amin(image)) / (np.amax(image) - np.amin(image))
-                        ).reshape(self.resolution) * 255)
-        # return np.uint8((
-        #                         (image - np.amin(image)) / (np.amax(image) - np.amin(image))
-        #                 ).reshape(self.resolution)[..., ::-1] * 255)
+        # returns a 2D array with integer values 0 to 255, which is the image reconstructed from the measurements
+        if self.method.split('_')[0] == 'Hadamard':
+            image = self.matrix @ measurements
+        elif self.method.split('_')[0] == 'Fourier':
+            m1 = measurements[1::3]
+            m2 = measurements[2::3]
+            image = np.real(np.fft.ifft((measurements[0::3].dot(2) - m1 - m2) + np.sqrt(3) * 1j * (m1 - m2)))  # 3-step
+            # image = np.real(np.fft.ifft((measurements[0::4] - measurements[2::4]) +
+            #                             1j * (measurements[1::4] - measurements[3::4])))  # 4-step
+        else:
+            image = np.linalg.solve(self.matrix, measurements)  # attempt at a catch-all reconstruct (no better than @)
+        return np.uint8(np.rint(
+            ((image - np.amin(image)) / (np.amax(image) - np.amin(image))).reshape(self.resolution) * 255
+        ))  # [..., ::-1]
 
     def measure(self, pause_time):
         measurements = np.zeros([self.matrix_all.shape[0]])
@@ -93,13 +117,10 @@ class Camera:
         cv2.waitKey(17)
         time.sleep(pause_time)
 
-        if self.ordering == 'Random':
-            iterations = self.matrix_all.shape[0]
-        else:
-            iterations = 2 * int(self.matrix_all.shape[0] * self.frac / 2)
+        iterations = 2 * int(self.matrix_all.shape[0] * self.frac / 2)  # todo frac was changed in random method!
 
         i = 2  # ignoring 0 and 1
-        next_mask = np.uint8(self.reshape_mask(self.matrix_all[i, ...]) * 255)
+        next_mask = np.uint8(np.rint(self.reshape_mask(self.matrix_all[i, ...]) * 255))
         while i < iterations:
             cv2.imshow(self.window, next_mask)
             # show the window (for the display time)
@@ -112,7 +133,7 @@ class Camera:
             start = time.time()
             if i < self.matrix_all.shape[0] - 1:
                 # next_mask = np.uint8(self.reshape_mask(self.matrix_all[6, ...]) * 255)
-                next_mask = np.uint8(self.reshape_mask(self.matrix_all[i + 1, ...]) * 255)
+                next_mask = np.uint8(np.rint(self.reshape_mask(self.matrix_all[i + 1, ...]) * 255))
                 # next_mask = np.uint8(np.ones([608, 684]) * /255)
             sleep_time = self.measurements_time - (time.time() - start)
             if sleep_time > 0:  # wait for the remaining amount of time to take a multiple measurements
@@ -148,12 +169,8 @@ class Camera:
         np.savetxt("outputs/deviations.txt", deviations)
         # np.savetxt("outputs/deviations.txt", deviations)
         # np.savetxt("outputs/times.txt", times)
-        if self.ordering != 'Random':
-            np.savetxt("outputs/measurements.txt", measurements)
-            return measurements
-        else:
-            np.savetxt(f"outputs/measurements_{str(self.seed).zfill(3)}.txt", measurements)
-            # np.savetxt(f"outputs/meas_matrix_{str(self.seed).zfill(3)}.txt", self.matrix, fmt='%d')
+        np.savetxt("outputs/measurements.txt", measurements)  # fmt='%.5e'????? precision
+        return measurements
 
     def reshape_mask(self, mask):
         # reshape by: integer upscale, diamond grid correction, rotate 90, pad to be the correct HDMI shape

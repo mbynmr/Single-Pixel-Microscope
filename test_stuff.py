@@ -5,34 +5,30 @@ from tqdm import tqdm
 from image_reconstruct import Reconstructor, add_noise, reconstruct_with_other_images_best_masks
 
 
-def fourier_masks(resolution):
-    # rotates masks by 45 degrees
-    matrix = Reconstructor(resolution, method='Fourier').matrix
-    matrix_all = np.zeros([np.asarray(resolution).prod() * 2 * 2, np.asarray(resolution).prod()])
-    matrix_all[0::2, ...] = (1 + matrix) / 2    # 1 & 0
-    matrix_all[1::2, ...] = (1 - matrix) / 2   # 0 & 1
-    # for i, e in enumerate(matrix_all[100:102, ...]):
-    for i, e in enumerate(matrix_all[::4, ...]):
-        mask = e.reshape(resolution)
-        # mask = (np.arange(np.prod(resolution)) / np.prod(resolution)).reshape(resolution)  # remov
-        # mask = mask + 0.25 * np.diag(np.ones(mask.shape[0]))
-        mask_mine_old = my_45_old(mask)
-        # for _ in tqdm(range(100)):
-        #     mask_mine_old = np.pad(np.rot90(my_45_old(np.kron(mask, np.ones((5, 5)))), axes=(0, 1)), ((144, 144),
-        #                                                                                               (22, 22 + 1)))
-        mask_mine = my_45(mask)
-        # for _ in tqdm(range(100)):
-        #     mask_mine = np.pad(np.rot90(my_45(np.kron(mask, np.ones((5, 5)))), axes=(0, 1)), ((144, 144),
-        #                                                                                       (22, 22 + 1)))
-        big = np.zeros([max(mask.shape[0], mask_mine_old.shape[0], mask_mine.shape[0]),
-                        mask.shape[1] + mask_mine_old.shape[1] + mask_mine.shape[1]])
-        big[:mask.shape[0], :mask.shape[1]] = mask
-        big[:mask_mine_old.shape[0], mask.shape[1]:(mask.shape[1] + mask_mine_old.shape[1])] = mask_mine_old
-        big[:mask_mine.shape[0], (mask.shape[1] + mask_mine_old.shape[1]):] = mask_mine
-        plt.imshow(np.uint8(big * 255), cmap=plt.get_cmap('gray'))
-        plt.show()
-        # plt.show(block=False)
+def fourier_masks():
+    print("reading image")
+    image = np.mean(plt.imread("originals/mario64.png"), axis=-1)  # greyscale by mean colour intensity
+    plt.imsave("originals/mario64_grey.png", np.real_if_close(image).reshape(image.shape), cmap=plt.get_cmap('gray'))
+    r = Reconstructor(image.shape, method='Fourier')
+    # m0 = r.matrix[0::4] @ image.flatten()
+    # m1 = r.matrix[1::4] @ image.flatten()
+    # m2 = r.matrix[2::4] @ image.flatten()
+    # m3 = r.matrix[3::4] @ image.flatten()
+    # measurements = (m0 - m2) + 1j * (m1 - m3)
+    m0 = r.matrix[0::3] @ image.flatten()
+    m1 = r.matrix[1::3] @ image.flatten()
+    m2 = r.matrix[2::3] @ image.flatten()
+    # m0 = m0 + np.multiply(m0 * 0.01, np.random.random(*m0.shape))
+    # m1 = m1 + np.multiply(m1 * 0.01, np.random.random(*m1.shape))
+    # m2 = m2 + np.multiply(m2 * 0.01, np.random.random(*m2.shape))
+    measurements = (m0.dot(2) - m1 - m2) + np.sqrt(3) * 1j * (m1 - m2)
+    output = r.reconstruct(measurements)
+    print(np.allclose(np.real(output), np.real_if_close(output)))  # todo absolute or real? or imaginary???
+    out = np.real(output).reshape(image.shape)
+    plt.imshow(out, cmap=plt.get_cmap('gray'))
+    plt.imsave("outputs/Fourier.png", out, cmap=plt.get_cmap('gray'))
     print("done")
+    plt.show()
 
 
 def rotating_masks(resolution):

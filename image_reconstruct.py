@@ -8,61 +8,42 @@ from test_image_deconstruct import deconstruct_general, deconstruct_hadamard
 
 class Reconstructor:
     """
-    Reconstructs an image from measurements corresponding to a sequence of Hadamard masks
+    Reconstructs an image from measurements corresponding to a sequence of masks
     """
 
     def __init__(self, resolution, method='Hadamard'):
         self.resolution = np.asarray(resolution)  # e.g. [128, 128]
         self.pixels = self.resolution.prod()  # e.g. 128*128
-        self.hadamard_bool = False
+        self.method = method
 
         # mask matrix
-        if method == 'Hadamard':  # Hadamard matrix
+        if self.method == 'Hadamard':  # Hadamard matrix
             # hadamard_mat = hadamard(self.pixels)           # 1 & -1
             # self.hadamard_plus = (1 + self.hadamard_mat) / 2    # 1 & 0
             # self.hadamard_minus = (1 - self.hadamard_mat) / 2   # 0 & 1
             self.matrix = hadamard(self.pixels)
-            self.hadamard_bool = True
-        elif method == 'Fourier' or method.split('_')[0] == 'Fourier':  # Fourier basis pattern
-            # wavelength = 1 / sqrt(u^2 + v^2)
-            # frequency = 2pi * sqrt(u^2 + v^2)
-            # direction = normalise([u, v])
-
-            # do ifft of [1, 0, 0, 0, 0] then [0, 1, 0, 0, 0] etc to move through 100% of every frequency
-            # (might need to have mirrored negetive version, or 2x measurements with the negetive in the 2nd half.)
-            # ifftreal we talked about - maybe all real measurements
-            self.matrix = np.zeros([self.pixels * 2, *self.resolution])  # this is 3D initially
-            offset = (1 - self.resolution) / 2
-            for k in tqdm(range(self.pixels)):
-                u = 2 * np.pi / (offset[0] + k % self.resolution[0])
-                v = 2 * np.pi / (offset[1] + k - k % self.resolution[0])
-                # todo vectorised version can be made.
-                #  make X = [range(resolution[0]), range(resolution[1])] + offset, and put it in the second 2 dimensions
-                #  make U = (find out how), and make it change over the first dimension
-                for i in range(resolution[0]):  # horizontal: x
-                    x = i + offset[0]
-                    for j in range(resolution[1]):  # vertical: y
-                        y = j + offset[1]
-                        # np.exp(2 * np.pi * 1j * (u * x + v * y))  # the whole basis
-                        self.matrix[2 * k, i, j] = np.cos(2 * np.pi * (u * x + v * y))  # real only
-                        self.matrix[2 * k + 1, i, j] = np.sin(2 * np.pi * (u * x + v * y))  # imaginary only
-                        # self.matrix[i, j] = a + b * np.cos(2 * np.pi * (u * x + v * y))  # real only??? used in paper
-            # self.matrix = self.matrix * 2 - 1  # from 0 and 1 to -1 and 1 for differential measurement
-            self.matrix = self.matrix.reshape([self.pixels * 2, self.pixels])  # reshape back to 2D
-            # todo ensure each mask is scaled between -1 and 1!
-            self.matrix = self.matrix - np.amin(self.matrix, axis=0)#[:, np.newaxis]
-            self.matrix = self.matrix / np.amax(self.matrix, axis=0)#[:, np.newaxis]
-            self.matrix = self.matrix * 2 - 1
-            if method == 'Fourier_binary':  # todo binarised version of Fourier basis pattern
+        elif self.method == 'Fourier' or self.method.split('_')[0] == 'Fourier':  # Fourier basis patterns
+            n = int(3)
+            self.matrix = np.zeros([int(self.pixels * n), self.pixels])  # this is 2D
+            for i in tqdm(range(n)):
+                # phase = 2 * np.pi * i / n
+                self.matrix[i::n, ...] = np.real(np.fft.ifft(
+                    np.diag(np.ones(self.pixels)).dot(np.exp(1j * 2 * np.pi * i / n))
+                ))
+            # normalise between 0 and 1
+            self.matrix = self.matrix - np.amin(self.matrix, axis=0)
+            self.matrix = self.matrix / np.amax(self.matrix, axis=0)
+            if self.method == 'Fourier_binary':  # todo binarised version of Fourier basis pattern
                 # use upsampling and Floyd-Steinberg error diffusion dithering to generate binary Fourier basis patterns
                 # dx.doi.org/10.1038/s41598-017-12228-3
-                raise NotImplementedError(f"'{method}' method is not working yet. Use '{method.split('_')[0]}' method.")
-        elif method == 'random':  # random matrix
+                raise NotImplementedError(
+                    f"'{self.method}' method is not working yet. Use '{self.method.split('_')[0]}' method.")
+        elif self.method == 'Random' or self.method == 'random':  # random matrix
             self.matrix = np.random.randint(low=0, high=2, size=[self.pixels, self.pixels]) * 2 - 1
             # for i, column in enumerate(self.matrix):  # todo make sure 50/50
             #     self.matrix[i, ...] = column
         else:
-            raise NotImplementedError(f"there is no '{method}' method")
+            raise NotImplementedError(f"there is no '{self.method}' method")
 
     def measure(self, file, do_return=None):
         measurements = deconstruct_general(self.resolution, file, self.matrix)
@@ -70,12 +51,14 @@ class Reconstructor:
             return measurements
         else:
             raise NotImplementedError("work in progress")
-            # np.savetxt('outputs/measurement.txt', measurements, '%.5e', ',', '\n')
+            # np.savetxt("outputs/measurement.txt", measurements, '%.5e', ',', '\n')
             # check that the size of the file won't be too large (I have a feeling it will be on the order of 1GB)
 
     def reconstruct(self, measurements):
-        if self.hadamard_bool:  # faster method (only works for Hadamard masks, not random masks)
+        if self.method == 'Hadamard':  # faster method (only works for Hadamard masks, not random masks)
             return (self.matrix @ measurements).reshape(self.resolution)
+        if self.method == 'Fourier' or self.method.split('_')[0] == 'Fourier':
+            return np.fft.ifft(measurements).reshape(self.resolution)
         # elif np.any(measurements == 0):
         #     self.matrix = self.matrix[measurements != 0, ...]
         #     measurements = measurements[measurements != 0]
@@ -84,8 +67,7 @@ class Reconstructor:
         #     #  use pdf lecture notes on compressed sensing
         #     #  find out how to do l1-norm minimisation in python: https://stackoverflow.com/questions/58584127
         #     return answer.reshape(self.resolution)
-        else:
-            return np.linalg.solve(self.matrix, measurements).reshape(self.resolution)
+        return np.linalg.solve(self.matrix, measurements).reshape(self.resolution)
         # the differences between np.linalg.solve(m1, m2) and m1 @ m2 for reconstructing are:
         #  np.linalg.solve is slower than @ (around 10x for 32x32 and around 15x for 64x64)
         #  @ doesn't work for reconstructing using random masks
