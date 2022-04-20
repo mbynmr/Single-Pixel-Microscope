@@ -22,18 +22,33 @@ class Reconstructor:
             # self.hadamard_plus = (1 + self.hadamard_mat) / 2    # 1 & 0
             # self.hadamard_minus = (1 - self.hadamard_mat) / 2   # 0 & 1
             self.matrix = hadamard(self.pixels)
-        elif self.method == 'Fourier' or self.method.split('_')[0] == 'Fourier':  # Fourier basis patterns
-            n = int(3)
-            self.matrix = np.zeros([int(self.pixels * n), self.pixels])  # this is 2D
-            for i in tqdm(range(n)):
-                # phase = 2 * np.pi * i / n
-                self.matrix[i::n, ...] = np.real(np.fft.ifft(
-                    np.diag(np.ones(self.pixels)).dot(np.exp(1j * 2 * np.pi * i / n))
-                ))
-            # normalise between 0 and 1
-            self.matrix = self.matrix - np.amin(self.matrix, axis=0)
-            self.matrix = self.matrix / np.amax(self.matrix, axis=0)
-            if self.method == 'Fourier_binary':  # todo binarised version of Fourier basis pattern
+        elif self.method.split('_')[0] == 'Fourier':  # Fourier basis patterns
+            if self.method.split('_')[-1] == '2D':
+                n = int(3)
+                self.matrix = np.zeros([int(self.pixels * n), *self.resolution])  # this is 3D
+                for i in tqdm(range(n)):
+                    # phase = 2 * np.pi * i / n
+                    self.matrix[i::n, ...] = np.real(np.fft.ifft2(
+                        np.diag(np.ones(self.pixels)).reshape(-1, *self.resolution).dot(np.exp(1j * 2 * np.pi * i / n))
+                    ))
+                # normalise between 0 and 1
+                self.matrix = self.matrix - np.amin(self.matrix, axis=0)
+                self.matrix = self.matrix / np.amax(self.matrix, axis=0)
+                # self.matrix = np.rint(self.matrix)
+                self.matrix = self.matrix.reshape([int(self.pixels * n), self.pixels])  # this is 2D
+            else:
+                n = int(3)
+                self.matrix = np.zeros([int(self.pixels * n), self.pixels])  # this is 2D
+                for i in tqdm(range(n)):
+                    # phase = 2 * np.pi * i / n
+                    self.matrix[i::n, ...] = np.real(np.fft.ifft(
+                        np.diag(np.ones(self.pixels)).dot(np.exp(1j * 2 * np.pi * i / n))
+                    ))
+                # normalise between 0 and 1
+                self.matrix = self.matrix - np.amin(self.matrix, axis=0)
+                self.matrix = self.matrix / np.amax(self.matrix, axis=0)
+                # self.matrix = np.rint(self.matrix)
+            if self.method == 'Fourier_binary' or self.method == 'Fourier_binary_2D':  # todo binarised Fourier patterns
                 # use upsampling and Floyd-Steinberg error diffusion dithering to generate binary Fourier basis patterns
                 # dx.doi.org/10.1038/s41598-017-12228-3
                 raise NotImplementedError(
@@ -57,8 +72,10 @@ class Reconstructor:
     def reconstruct(self, measurements):
         if self.method == 'Hadamard':  # faster method (only works for Hadamard masks, not random masks)
             return (self.matrix @ measurements).reshape(self.resolution)
-        if self.method == 'Fourier' or self.method.split('_')[0] == 'Fourier':
-            return np.fft.ifft(measurements).reshape(self.resolution)
+        if self.method.split('_')[0] == 'Fourier':
+            if self.method.split('_')[-1] == '2D':
+                return np.fft.ifft2(measurements.reshape(self.resolution))  # reshape 1D to 2D then ifft2
+            return np.fft.ifft(measurements).reshape(self.resolution)  # ifft then reshape 1D to 2D
         # elif np.any(measurements == 0):
         #     self.matrix = self.matrix[measurements != 0, ...]
         #     measurements = measurements[measurements != 0]

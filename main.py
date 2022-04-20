@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 
 # very helpful: https://github.com/cbasedlf/single_pixel_demo/blob/master/sp_demo.py
 # todo
-#  python 3.8 environment: pip install numpy matplotlib scikit-image tqdm opencv-python pyvisa-py notify-run
+#  python 3.8 environment: pip install numpy matplotlib scikit-image tqdm opencv-python pyvisa-py notify-run graycode
 #  always square image dimensions (128x128, 64x64, etc) - is it possible to have non-square dimensions? I think so
 #  converts input (test) images to greyscale
 #  use images as masks? may be useful for AI cases "is this a dog?" compressed sensing could do it very fast

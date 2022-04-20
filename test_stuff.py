@@ -1,15 +1,19 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+from PIL import Image
 
 from image_reconstruct import Reconstructor, add_noise, reconstruct_with_other_images_best_masks
+from HadamardOrdering import Walsh
 
 
 def fourier_masks():
     print("reading image")
     image = np.mean(plt.imread("originals/mario64.png"), axis=-1)  # greyscale by mean colour intensity
-    plt.imsave("originals/mario64_grey.png", np.real_if_close(image).reshape(image.shape), cmap=plt.get_cmap('gray'))
-    r = Reconstructor(image.shape, method='Fourier')
+    plt.imsave("originals/mario64_grey.png", np.kron(image, np.ones((5, 5))), cmap=plt.get_cmap('gray'))
+    method = 'Fourier'
+    # method = 'Fourier_2D'
+    r = Reconstructor(image.shape, method=method)
     # m0 = r.matrix[0::4] @ image.flatten()
     # m1 = r.matrix[1::4] @ image.flatten()
     # m2 = r.matrix[2::4] @ image.flatten()
@@ -22,13 +26,68 @@ def fourier_masks():
     # m1 = m1 + np.multiply(m1 * 0.01, np.random.random(*m1.shape))
     # m2 = m2 + np.multiply(m2 * 0.01, np.random.random(*m2.shape))
     measurements = (m0.dot(2) - m1 - m2) + np.sqrt(3) * 1j * (m1 - m2)
-    output = r.reconstruct(measurements)
-    print(np.allclose(np.real(output), np.real_if_close(output)))  # todo absolute or real? or imaginary???
-    out = np.real(output).reshape(image.shape)
-    plt.imshow(out, cmap=plt.get_cmap('gray'))
-    plt.imsave("outputs/Fourier.png", out, cmap=plt.get_cmap('gray'))
+    # _, order = Walsh(image.shape[0], np.zeros([np.prod(image.shape), np.prod(image.shape)]), True)
+    # _ = None
+    # frac = [1 / 2 ** 0, 1 / 2 ** 1, 1 / 2 ** 2, 1 / 2 ** 3]  # 1, 1/2, 1/4, 1/8
+    frac = 1 / 2 ** np.arange(4)
+    for f in frac:
+        meas = np.array(measurements)
+        # walsh = hadamard[order]
+        # hadamard[order] = walsh, right??
+        # meas[np.int_(order)] = np.array(measurements)  # from "Walsh" to "Natural" Hadamard analogue
+        # meas = np.array(measurements)[np.int_(order)]
+        # ---- undersample ----
+        if f < 1:
+            meas = undersample(meas, f)
+            # meas = undersample(meas, f, 'Scale')
+            # meas = undersample(meas, f, 'Dither')
+        # ----
+        # indexes = np.arange(np.prod(image.shape))
+        # indexes = np.where(((indexes % np.prod(image.shape[0])) / np.prod(image.shape[1])) >= f, indexes, 0)
+        # print(f"{np.sum(np.where(indexes == 0, 1, 0)) / len(meas)}")
+        # meas[indexes] = 0
+        # ----
+        # meas = meas[np.int_(order)]
+        # meas[np.int_(order)] = np.array(meas)
+        print(f"{100 * np.sum(np.where(meas != 0, 1, 0)) / len(meas)}%")
+        output = r.reconstruct(meas)
+        out = np.real(output).reshape(image.shape)
+        # plt.imshow(out, cmap=plt.get_cmap('gray'))
+        plt.imsave(f"outputs/Fourier_{f}.png", np.kron(out, np.ones((5, 5))), cmap=plt.get_cmap('gray'))
     print("done")
-    plt.show()
+    # plt.show()
+
+
+def undersample(meas, f, method=None):
+    if method is None or method == 'None':
+        meas[int(len(meas) * f):] = 0
+        return meas
+    if method == 'Scale':
+        meas[int(len(meas) * f):] = 0
+        length = 10
+        meas[int(len(meas) * f - length):int(len(meas) * f)] = (
+                ((np.arange(length)[::-1] + 1) / length) * meas[int(len(meas) * f - length):int(len(meas) * f)])
+        return meas
+    if method == 'Dither':
+        # length = int(len(meas) * f / 10)
+        length = 50
+        out = np.zeros([length, 1, 3])  # 1D RGB image
+        for colour in range(3):
+            out[:, 0, colour] = np.arange(length)[::-1] / (length - 1)
+        plt.imsave("outputs/temp_1.png", out)
+        Image.open("outputs/temp_1.png").convert("1").save("outputs/temp_2.png")  # load, dither, save
+        image = plt.imread("outputs/temp_2.png", out)
+        dither = image[np.amin(np.nonzero(1 - image[:, 0])):(np.amax(np.nonzero(image[:, 0])) + 1), 0]
+        print(len(dither))
+        # exclude unnecessary zeros at the end of, and ones at the start of, the dither
+        multiplier = np.ones(meas.shape)
+        # (cutoff - num of ones) to (cutoff + num of zeros) is the new dither zone
+        multiplier[int(len(meas) * f - len(np.nonzero(dither)[0])):
+                   int(len(meas) * f + len(dither)) - len(np.nonzero(dither)[0])] = dither
+        multiplier[int(len(meas) * f + len(dither) - len(np.nonzero(dither)[0])):] = 0
+        return meas * multiplier
+    else:
+        raise NotImplementedError(f"no '{method}' method")
 
 
 def rotating_masks(resolution):
