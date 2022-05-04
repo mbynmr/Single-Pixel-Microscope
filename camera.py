@@ -21,6 +21,7 @@ class Camera:
         pixels = np.asarray(self.resolution).prod()  # 32*32 = 1024
         DMD_resolution = [684, 608]
         HDMI_resolution = DMD_resolution[::-1]
+        self.array = np.zeros(HDMI_resolution)
 
         self.factor = int((HDMI_resolution[1] + 1) / (self.resolution[0] * 2))
         self.pad = [int((HDMI_resolution[0] - (self.factor * self.resolution[1])) / 2),
@@ -43,6 +44,9 @@ class Camera:
                 # dx.doi.org/10.1038/s41598-017-12228-3
                 raise NotImplementedError(
                     f"'{self.method}' method is not working yet. Use '{self.method.split('_')[0]}' method.")
+
+            self.matrix_all = self.matrix_all.reshape([-1, *self.resolution])  # make 3D
+            # self.matrix_all = self.matrix_all[:int(self.matrix_all.shape[0] / 2), ...]  # discard ????????#todo
         else:
             if self.method.split('_')[0] == 'Hadamard':
                 matrix_both = np.zeros([pixels * 2, pixels])
@@ -75,13 +79,19 @@ class Camera:
 
     def take_picture(self, pause_time=15):
         # reconstruct image from measurements and masks
-        measurements_p_and_m = self.measure(pause_time)
+
+        # measurements_p_and_m = self.measure(pause_time)
+        measurements_p_and_m = np.loadtxt("outputs/measurements.txt")
+
         if self.method == 'Random':
             # save the measurement matrix (and its seed so it can be reconstructed in python), as the matrix is random
             np.savetxt(f"outputs/meas_matrix_{str(self.seed).zfill(3)}.txt", self.matrix, fmt='%d')
             return
-        # measurements_p_and_m = np.loadtxt("outputs/measurements.txt")
-        measurements = measurements_p_and_m[0::2] - measurements_p_and_m[1::2]  # differential measurement
+        elif self.method.split('_')[0] == 'Fourier':
+            measurements = measurements_p_and_m
+            # measurements[:int(measurements_p_and_m.shape[0] / 2)] = 0
+        else:
+            measurements = measurements_p_and_m[0::2] - measurements_p_and_m[1::2]  # differential measurement
         image = self.reconstruct(measurements)
         plt.imsave(f"outputs/SPC_image_{self.resolution[0]}_{self.xplc}"
                    f"_{self.minimum_measurements_per_mask}_{self.frac}_{self.method}.png",
@@ -119,8 +129,15 @@ class Camera:
 
         iterations = 2 * int(self.matrix_all.shape[0] * self.frac / 2)  # todo frac was changed in random method!
 
-        i = 2  # ignoring 0 and 1
-        next_mask = np.uint8(np.rint(self.reshape_mask(self.matrix_all[i, ...]) * 255))
+        if self.method.split('_')[0] == 'Hadamard':
+            i = 2  # ignoring problematic 0 and 1
+        else:
+            i = 0
+
+        if self.method.split('_')[0] == 'Fourier':
+            next_mask = np.uint8(np.rint(self.reshape_mask(self.matrix_all[i, ...]) * 255))  # todo NOT +1
+        else:
+            next_mask = np.uint8(np.rint(self.reshape_mask(self.matrix_all[i, ...]) * 255))
         while i < iterations:
             cv2.imshow(self.window, next_mask)
             # show the window (for the display time)
@@ -133,7 +150,10 @@ class Camera:
             start = time.time()
             if i < self.matrix_all.shape[0] - 1:
                 # next_mask = np.uint8(self.reshape_mask(self.matrix_all[6, ...]) * 255)
-                next_mask = np.uint8(np.rint(self.reshape_mask(self.matrix_all[i + 1, ...]) * 255))
+                if self.method.split('_')[0] == 'Fourier':
+                    next_mask = np.uint8(np.rint(self.make_fourier_mask(i) * 255))
+                else:
+                    next_mask = np.uint8(np.rint(self.reshape_mask(self.matrix_all[i + 1, ...]) * 255))
                 # next_mask = np.uint8(np.ones([608, 684]) * /255)
             sleep_time = self.measurements_time - (time.time() - start)
             if sleep_time > 0:  # wait for the remaining amount of time to take a multiple measurements
@@ -176,6 +196,13 @@ class Camera:
         # reshape by: integer upscale, diamond grid correction, rotate 90, pad to be the correct HDMI shape
         return np.pad(np.rot90(my_45(np.kron(mask, np.ones((self.factor, self.factor)))), axes=(0, 1)),
                       ((self.pad[0], self.pad[0]), (self.pad[1], self.pad[1] + 1)))
+
+    def make_fourier_mask(self, i):
+        array = np.array(self.array)
+        array[int(i / 3)] = 1
+        phase_multiplier_thing = (np.exp(1j * 2 * np.pi * (i % 3) / 3))
+        mask = np.fft.ifft()
+        return mask
 
     def reset_multimeter(self):
         # set the multimeter up to take (and store) infinite measurements as fast as possible when called to INITiate

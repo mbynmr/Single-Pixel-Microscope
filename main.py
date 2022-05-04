@@ -1,8 +1,8 @@
-# from notify_run import Notify
+from notify_run import Notify
 
 from test_stuff import noise_and_undersampling, rotating_masks, fourier_masks
 from image_reconstruct import Reconstructor
-# from camera import Camera
+from camera import Camera
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -51,10 +51,10 @@ def main():
     measurements_per_mask = int(3)
 
     fraction = 1
-    method = 'Hadamard_Natural'
+    # method = 'Hadamard_Natural'
     # method = 'Hadamard_Walsh'
     # method = 'Random'
-    # method = 'Fourier'
+    method = 'Fourier'
     # method = 'Fourier_binary'
 
     try:
@@ -62,16 +62,16 @@ def main():
         print(f"{resolution = }")
         xplc = [0.02, 0.1, 1, 10]  # these are the only options for the multimeter
 
-        # c = Camera(resolution, xplc[xplc_index], measurements_per_mask, fraction, method)
-        # c.take_picture(pause_time=5)  # input pause time in seconds before the masks are shown
-        # c.close()
+        c = Camera(resolution, xplc[xplc_index], measurements_per_mask, fraction, method)
+        c.take_picture(pause_time=5)  # input pause time in seconds before the masks are shown
+        c.close()
     finally:
         # notify = Notify()
         # notify.send('Finished')
-        # Notify().send('Finished')
+        Notify().send('Finished')
         print("done")
 
 
 if __name__ == '__main__':
-    # main()
-    not_main()
+    main()
+    # not_main()
