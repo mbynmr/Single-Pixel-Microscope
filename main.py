@@ -45,16 +45,16 @@ def not_main():
 
 
 def main():
-    power = int(4)  # 4: 16x16, 5: 32x32, 6: 64x64, 7: 128x128, 8: 256x256
+    power = int(5)  # 4: 16x16, 5: 32x32, 6: 64x64, 7: 128x128, 8: 256x256
 
     xplc_index = int(2)  # 0 to 3: [0.02, 0.1, 1, 10]
     measurements_per_mask = int(3)
 
     fraction = 1
-    # method = 'Hadamard_Natural'
+    method = 'Hadamard_Natural'
     # method = 'Hadamard_Walsh'
     # method = 'Random'
-    method = 'Fourier'
+    # method = 'Fourier'
     # method = 'Fourier_binary'
 
     try:

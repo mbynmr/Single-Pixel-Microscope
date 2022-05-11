@@ -2,6 +2,7 @@ import time
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.linalg import hadamard
+from scipy.interpolate import griddata, interp2d  # todo
 import cv2
 import pyvisa as visa
 from tqdm import tqdm
@@ -56,7 +57,7 @@ class Camera:
             elif self.method == 'Random':  # random 50/50 matrix
                 self.matrix = random_masks(pixels, self.frac, seed=self.seed)
                 matrix_both = np.zeros([int(pixels * self.frac) * 2, pixels])
-                self.frac = 1  # todo this means we need to do less shimmying later
+                self.frac = 1
             else:
                 raise NotImplementedError(f"there is no '{self.method}' matrix")
 
@@ -80,8 +81,8 @@ class Camera:
     def take_picture(self, pause_time=15):
         # reconstruct image from measurements and masks
 
-        # measurements_p_and_m = self.measure(pause_time)
-        measurements_p_and_m = np.loadtxt("outputs/measurements.txt")
+        measurements_p_and_m = self.measure(pause_time)
+        # measurements_p_and_m = np.loadtxt("outputs/measurements.txt")
 
         if self.method == 'Random':
             # save the measurement matrix (and its seed so it can be reconstructed in python), as the matrix is random
@@ -127,7 +128,7 @@ class Camera:
         cv2.waitKey(17)
         time.sleep(pause_time)
 
-        iterations = 2 * int(self.matrix_all.shape[0] * self.frac / 2)  # todo frac was changed in random method!
+        iterations = 2 * int(self.matrix_all.shape[0] * self.frac / 2)
 
         if self.method.split('_')[0] == 'Hadamard':
             i = 2  # ignoring problematic 0 and 1
@@ -135,9 +136,9 @@ class Camera:
             i = 0
 
         if self.method.split('_')[0] == 'Fourier':
-            next_mask = np.uint8(np.rint(self.reshape_mask(self.matrix_all[i, ...]) * 255))  # todo NOT +1
+            next_mask = np.uint8(np.rint(self.make_fourier_mask(i) * 255))
         else:
-            next_mask = np.uint8(np.rint(self.reshape_mask(self.matrix_all[i, ...]) * 255))
+            next_mask = np.uint8(np.rint(self.reshape_mask(self.matrix_all[i, ...]) * 255))  # todo NOT +1
         while i < iterations:
             cv2.imshow(self.window, next_mask)
             # show the window (for the display time)
@@ -151,7 +152,9 @@ class Camera:
             if i < self.matrix_all.shape[0] - 1:
                 # next_mask = np.uint8(self.reshape_mask(self.matrix_all[6, ...]) * 255)
                 if self.method.split('_')[0] == 'Fourier':
+                    # start = time.time()
                     next_mask = np.uint8(np.rint(self.make_fourier_mask(i) * 255))
+                    # print(time.time() - start)
                 else:
                     next_mask = np.uint8(np.rint(self.reshape_mask(self.matrix_all[i + 1, ...]) * 255))
                 # next_mask = np.uint8(np.ones([608, 684]) * /255)
@@ -168,7 +171,10 @@ class Camera:
                 measurements[i] = np.mean(buffer)
                 numbers[i] = len(buffer)  # int(np.shape(buffer)[0])
                 # times[i] = time.time() - start
-                while deviations[i] > 0.01 * measurements[i] or len(buffer) < self.minimum_measurements_per_mask:
+                # while len(buffer) < self.minimum_measurements_per_mask:
+                # while deviations[i] > 0.01 * measurements[i] or len(buffer) < self.minimum_measurements_per_mask:
+                while deviations[i] > 5e-6 or len(buffer) < self.minimum_measurements_per_mask:
+                    # todo change threshold
                     if np.shape(buffer)[0] > 10 * self.minimum_measurements_per_mask:
                         print(f"redoing mask {i}")
                         i -= 1
@@ -198,11 +204,18 @@ class Camera:
                       ((self.pad[0], self.pad[0]), (self.pad[1], self.pad[1] + 1)))
 
     def make_fourier_mask(self, i):
-        array = np.array(self.array)
-        array[int(i / 3)] = 1
-        phase_multiplier_thing = (np.exp(1j * 2 * np.pi * (i % 3) / 3))
-        mask = np.fft.ifft()
-        return mask
+        # points = np.array((range(self.resolution[0]), range(self.resolution[1]))).T
+        # xi = np.array((np.arange(self.resolution[0] * self.factor) / self.resolution[0],
+        #                np.arange(self.resolution[1] * self.factor) / self.resolution[1]))
+        # mask = griddata(points, self.matrix_all[i, ...], xi, method='nearest')
+        interp = interp2d(range(self.resolution[0]), range(self.resolution[1]), self.matrix_all[i, ...], kind='linear')
+        # copy=False
+        # {‘linear’, ‘cubic’, ‘quintic’}
+        mask = interp(np.arange(self.resolution[0] * self.factor) / self.factor,
+                      np.arange(self.resolution[1] * self.factor) / self.factor, assume_sorted=True)
+        mask = np.pad(my_45(mask), ((self.pad[0], self.pad[0]), (self.pad[1], self.pad[1] + 1)))
+        mask = np.where(mask < 0, 0, mask)
+        return np.where(mask > 1, 1, mask)
 
     def reset_multimeter(self):
         # set the multimeter up to take (and store) infinite measurements as fast as possible when called to INITiate
