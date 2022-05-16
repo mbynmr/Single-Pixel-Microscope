@@ -1,10 +1,12 @@
 from notify_run import Notify
+# import numpy as np
+# import matplotlib.pyplot as plt
+import time
+from tqdm import tqdm
 
 from test_stuff import noise_and_undersampling, rotating_masks, fourier_masks
 from image_reconstruct import Reconstructor
 from camera import Camera
-import numpy as np
-import matplotlib.pyplot as plt
 
 # image resizer: ffmpeg -i mario.png -vf scale=128:-1 mario128.png
 # image type converter: ffmpeg -i image.webp image.gif
@@ -45,30 +47,40 @@ def not_main():
 
 
 def main():
-    power = int(5)  # 4: 16x16, 5: 32x32, 6: 64x64, 7: 128x128, 8: 256x256
-
-    xplc_index = int(2)  # 0 to 3: [0.02, 0.1, 1, 10]
-    measurements_per_mask = int(3)
-
-    fraction = 1
-    method = 'Hadamard_Natural'
-    # method = 'Hadamard_Walsh'
-    # method = 'Random'
-    # method = 'Fourier'
-    # method = 'Fourier_binary'
-
     try:
-        resolution = [2 ** power, 2 ** power]
-        print(f"{resolution = }")
+        c = Camera(pause_time=5)
         xplc = [0.02, 0.1, 1, 10]  # these are the only options for the multimeter
+        method_list = ['Hadamard_Natural', 'Hadamard_Walsh', 'Random', 'Fourier', 'Fourier_binary']
 
-        c = Camera(resolution, xplc[xplc_index], measurements_per_mask, fraction, method)
-        c.take_picture(pause_time=5)  # input pause time in seconds before the masks are shown
-        c.close()
+        i = 0
+        for p in range(1):  # 3 total: 16, 32, 64
+            power = p + 5
+            # power = int(5)  # 4: 16, 5: 32, 6: 64, 7: 128, 8: 256
+            resolution = [2 ** power, 2 ** power]  # 4: [16, 16], 5: [32, 32], etc.
+
+            for f in range(1):  # 4 total: 1, 0.5, 0.25, 0.125
+                fraction = 2 ** (-f)
+                # fraction = 0.125
+                for m in range(3):
+                    method = method_list[2 - m]
+
+                    xplc_index = int(2)  # 0 to 3: [0.02, 0.1, 1, 10]
+                    measurements_per_mask = int(1)
+
+                    start = time.time()
+                    c.prepare_for_picture(resolution, xplc[xplc_index], measurements_per_mask, fraction, method)
+                    middle = time.time()
+                    c.take_picture(n=i)  # input pause time in seconds before the masks are shown
+                    print(f"{i}: Measuring and reconstructing {resolution = }, {fraction = }, {method = } took\n"
+                          f"a total of {time.time() - start}s, including the {middle - start}s of preparation.")
+                    i += 1
+                    c.reset_multimeter()
+        # c.close()
+        c.close()  # close after finishing
     finally:
         # notify = Notify()
         # notify.send('Finished')
-        Notify().send('Finished')
+        # Notify().send('Finished')
         print("done")
 
 

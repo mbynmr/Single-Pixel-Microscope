@@ -2,7 +2,7 @@ import time
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.linalg import hadamard
-from scipy.interpolate import griddata, interp2d  # todo
+from scipy.interpolate import interp2d
 import cv2
 import pyvisa as visa
 from tqdm import tqdm
@@ -11,7 +11,36 @@ from HadamardOrdering import Walsh, random_masks
 
 
 class Camera:
-    def __init__(self, resolution, xplc, measurements, fraction, method):
+    def __init__(self, pause_time):
+        # define self variables
+        self.resolution = None
+        self.xplc = None
+        self.minimum_measurements_per_mask = None
+        self.method = None
+        self.seed = None
+        self.integration_time = None
+        self.measurements_time = None
+        self.factor = None
+        self.pad = None
+        self.pad_width = None
+        self.matrix = None
+        self.matrix_all = None
+
+        # set up fullscreen cv2 output (masks on the DMD)
+        self.window = set_up_mask_output()
+
+        # set up the multimeter
+        self.plc = 1 / 50
+        self.rm, self.multimeter = set_up_multimeter()
+        # prepare the multimeter for a run of measurements
+        self.reset_multimeter()
+
+        # the first cv2 display takes a while to set up, and this was causing problems with the measurements
+        cv2.imshow(self.window, cv2.imread("originals/splash.png"))  # first cv2 display
+        cv2.waitKey(17)
+        time.sleep(pause_time)
+
+    def prepare_for_picture(self, resolution, xplc, measurements, fraction, method):
         self.resolution = resolution
         self.xplc = xplc
         self.minimum_measurements_per_mask = measurements
@@ -19,10 +48,14 @@ class Camera:
         self.method = method
         self.seed = np.random.randint(999)
 
+        # set the measurement time
+        self.integration_time = self.plc * self.xplc  # in seconds
+        self.measurements_time = self.integration_time * self.minimum_measurements_per_mask  # in seconds
+
+        # make DMD mask transformation variables
         pixels = np.asarray(self.resolution).prod()  # 32*32 = 1024
         DMD_resolution = [684, 608]
         HDMI_resolution = DMD_resolution[::-1]
-        self.array = np.zeros(HDMI_resolution)
 
         self.factor = int((HDMI_resolution[1] + 1) / (self.resolution[0] * 2))
         self.pad = [int((HDMI_resolution[0] - (self.factor * self.resolution[1])) / 2),
@@ -66,22 +99,10 @@ class Camera:
 
             self.matrix_all = matrix_both.reshape([-1, *self.resolution])
 
-        # set up fullscreen cv2 output (masks on the DMD)
-        self.window = set_up_mask_output()
-
-        # set up the multimeter
-        plc = 1 / 50
-        self.rm, self.multimeter = set_up_multimeter()
-        # prepare the multimeter for a run of measurements
-        self.reset_multimeter()
-        # set the measurement time
-        self.integration_time = plc * self.xplc  # in seconds
-        self.measurements_time = self.integration_time * self.minimum_measurements_per_mask  # in seconds
-
-    def take_picture(self, pause_time=15):
+    def take_picture(self, n=0):
         # reconstruct image from measurements and masks
 
-        measurements_p_and_m = self.measure(pause_time)
+        measurements_p_and_m = self.measure(n)
         # measurements_p_and_m = np.loadtxt("outputs/measurements.txt")
 
         if self.method == 'Random':
@@ -94,10 +115,10 @@ class Camera:
         else:
             measurements = measurements_p_and_m[0::2] - measurements_p_and_m[1::2]  # differential measurement
         image = self.reconstruct(measurements)
-        plt.imsave(f"outputs/SPC_image_{self.resolution[0]}_{self.xplc}"
+        plt.imsave(f"outputs/multiple/{n}_SPC_image_{self.resolution[0]}_{self.xplc}"
                    f"_{self.minimum_measurements_per_mask}_{self.frac}_{self.method}.png",
                    image, cmap=plt.get_cmap('gray'))  # save image
-        plt.imsave(f"outputs/SPC_image_{self.resolution[0]}_{self.xplc}"
+        plt.imsave(f"outputs/multiple/{n}_SPC_image_{self.resolution[0]}_{self.xplc}"
                    f"_{self.minimum_measurements_per_mask}_{self.frac}_{self.method}_upscaled.png",
                    np.kron(image, np.ones((10, 10))), cmap=plt.get_cmap('gray'))  # 10x integer upscaled image
 
@@ -117,16 +138,11 @@ class Camera:
             ((image - np.amin(image)) / (np.amax(image) - np.amin(image))).reshape(self.resolution) * 255
         ))  # [..., ::-1]
 
-    def measure(self, pause_time):
+    def measure(self, n):
         measurements = np.zeros([self.matrix_all.shape[0]])
         deviations = np.zeros([self.matrix_all.shape[0]])
         numbers = np.zeros([self.matrix_all.shape[0]])
         # times = np.zeros([self.matrix_all.shape[0]])
-
-        # the first cv2 display takes a while to set up, and this was causing problems with the measurements
-        cv2.imshow(self.window, cv2.imread("originals/splash.png"))  # first cv2 display
-        cv2.waitKey(17)
-        time.sleep(pause_time)
 
         iterations = 2 * int(self.matrix_all.shape[0] * self.frac / 2)
 
@@ -162,8 +178,8 @@ class Camera:
             if sleep_time > 0:  # wait for the remaining amount of time to take a multiple measurements
                 # print(f"slept for {sleep_time}s on mask {i}")
                 time.sleep(sleep_time)
-            else:
-                print(f"did not sleep on mask {i}")
+            # else:
+                # print(f"did not sleep on mask {i}")
             try:
                 # fetch the data from the instruments internal storage and format them
                 buffer = np.array(self.multimeter.query('FETCh?').split(';')[0].split(','), dtype=float)
@@ -176,7 +192,7 @@ class Camera:
                 while deviations[i] > 5e-6 or len(buffer) < self.minimum_measurements_per_mask:
                     # todo change threshold
                     if np.shape(buffer)[0] > 10 * self.minimum_measurements_per_mask:
-                        print(f"redoing mask {i}")
+                        # print(f"redoing mask {i}")
                         i -= 1
                         break
                     time.sleep(self.integration_time)
@@ -191,11 +207,16 @@ class Camera:
                 i -= 1
             i += 1
 
-        np.savetxt("outputs/numbers.txt", numbers, fmt='%d')
-        np.savetxt("outputs/deviations.txt", deviations)
-        # np.savetxt("outputs/deviations.txt", deviations)
+        # m = 0
+        # try:
+        #     while True:
+        #         _ = np.loadtxt(f"outputs/multiple_{m}/measurements_0.txt")  # checks if the m-th folder is empty
+        #         m += 1
+        # except FileNotFoundError:
+        np.savetxt(f"outputs/multiple/{n}_measurements.txt", measurements)  # fmt='%.5e'????? precision
+        np.savetxt(f"outputs/multiple/{n}_numbers.txt", numbers, fmt='%d')
+        np.savetxt(f"outputs/multiple/{n}_deviations.txt", deviations)
         # np.savetxt("outputs/times.txt", times)
-        np.savetxt("outputs/measurements.txt", measurements)  # fmt='%.5e'????? precision
         return measurements
 
     def reshape_mask(self, mask):

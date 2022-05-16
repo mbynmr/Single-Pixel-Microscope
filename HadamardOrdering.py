@@ -57,7 +57,7 @@ def random_masks(pixels, frac, seed):
     rs = np.random.RandomState(seed)
     seeds = rs.randint(low=int(0), high=int(num_patterns * 1000), size=num_patterns)
 
-    for i in tqdm(range(num_patterns)):
+    for i in range(num_patterns):
         np.random.RandomState(seeds[i]).shuffle(row)
         measurement_matrix[i, :] = row
 
