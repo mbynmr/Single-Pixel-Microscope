@@ -16,6 +16,7 @@ class Camera:
         self.resolution = None
         self.xplc = None
         self.minimum_measurements_per_mask = None
+        self.frac = None
         self.method = None
         self.seed = None
         self.integration_time = None
@@ -46,7 +47,7 @@ class Camera:
         self.minimum_measurements_per_mask = measurements
         self.frac = fraction
         self.method = method
-        self.seed = np.random.randint(999)
+        self.seed = np.random.randint(int(1e5))  # 10k should be big enough?
 
         # set the measurement time
         self.integration_time = self.plc * self.xplc  # in seconds
@@ -88,8 +89,11 @@ class Camera:
                 if self.method == 'Hadamard_Walsh':  # Walsh ordering Hadamard matrix
                     self.matrix = Walsh(self.resolution[0], self.matrix)
             elif self.method == 'Random':  # random 50/50 matrix
-                self.matrix = random_masks(pixels, self.frac, seed=self.seed)
-                matrix_both = np.zeros([int(pixels * self.frac) * 2, pixels])
+                # self.matrix = random_masks(pixels, self.frac, seed=self.seed)  # slow, but perfectly 50/50
+                num = int(self.frac * pixels)
+                # use the seed to create an approximately 50/50 random matrix by rounding the 0-1 random to nearest int
+                self.matrix = (-1) + 2 * np.rint(np.random.RandomState(self.seed).random_sample([num, pixels]))
+                matrix_both = np.zeros([num * 2, pixels])
                 self.frac = 1
             else:
                 raise NotImplementedError(f"there is no '{self.method}' matrix")

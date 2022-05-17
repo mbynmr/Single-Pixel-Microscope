@@ -11,9 +11,9 @@ def fourier_masks():
     print("reading image")
     image = np.mean(plt.imread("originals/mario64.png"), axis=-1)  # greyscale by mean colour intensity
     plt.imsave("originals/mario64_grey.png", np.kron(image, np.ones((5, 5))), cmap=plt.get_cmap('gray'))
-    method = 'Fourier'
-    # method = 'Fourier_2D'
-    r = Reconstructor(image.shape, method=method)
+    # mask_method = 'Fourier'
+    mask_method = 'Fourier_2D'
+    r = Reconstructor(image.shape, method=mask_method)
     # m0 = r.matrix[0::4] @ image.flatten()
     # m1 = r.matrix[1::4] @ image.flatten()
     # m2 = r.matrix[2::4] @ image.flatten()
@@ -26,40 +26,59 @@ def fourier_masks():
     # m1 = m1 + np.multiply(m1 * 0.01, np.random.random(*m1.shape))
     # m2 = m2 + np.multiply(m2 * 0.01, np.random.random(*m2.shape))
     measurements = (m0.dot(2) - m1 - m2) + np.sqrt(3) * 1j * (m1 - m2)
-    # _, order = Walsh(image.shape[0], np.zeros([np.prod(image.shape), np.prod(image.shape)]), True)
-    # _ = None
+
+    # undersample cutoff method
+    undersample_method = 'Sharp'
+    # undersample_method = 'Scale'
+    # undersample_method = 'Dither'
+
+    # orderings
+    walsh = False
+    # walsh = True
+    # cc = False
+    cc = True
+    if walsh or cc:
+        _, order_walsh = Walsh(image.shape[0], np.zeros([np.prod(image.shape), np.prod(image.shape)]), True)
+        _ = None  # remove from memory
+        order_walsh = np.int_(order_walsh)
+        # walsh = hadamard[order_walsh]
+        # hadamard[order_walsh] = walsh
+        if cc:
+            order_cc = cake_cutting(image.shape)
+            # cake_cut = hadamard[order]
+            # hadamard[order] = cake_cut
+        else:
+            order_cc = range(len(measurements))
+    else:
+        order_walsh = range(len(measurements))
+        order_cc = range(len(measurements))
+
     # frac = [1 / 2 ** 0, 1 / 2 ** 1, 1 / 2 ** 2, 1 / 2 ** 3]  # 1, 1/2, 1/4, 1/8
     frac = 1 / 2 ** np.arange(4)
     for f in frac:
         meas = np.array(measurements)
-        # walsh = hadamard[order]
-        # hadamard[order] = walsh, right??
-        # meas[np.int_(order)] = np.array(measurements)  # from "Walsh" to "Natural" Hadamard analogue
-        # meas = np.array(measurements)[np.int_(order)]
+        # order change
+        meas[order_walsh] = np.array(measurements)  # from "Walsh" to "Natural" Hadamard analogue
+        meas[order_cc] = np.array(meas)  # inverse of "Natural" to cc
+        # meas = meas[order_cc]  # from "Natural" to "Cake Cutting" Hadamard analogue
         # ---- undersample ----
         if f < 1:
-            meas = undersample(meas, f)
-            # meas = undersample(meas, f, 'Scale')
-            # meas = undersample(meas, f, 'Dither')
-        # ----
-        # indexes = np.arange(np.prod(image.shape))
-        # indexes = np.where(((indexes % np.prod(image.shape[0])) / np.prod(image.shape[1])) >= f, indexes, 0)
-        # print(f"{np.sum(np.where(indexes == 0, 1, 0)) / len(meas)}")
-        # meas[indexes] = 0
-        # ----
-        # meas = meas[np.int_(order)]
-        # meas[np.int_(order)] = np.array(meas)
-        print(f"{100 * np.sum(np.where(meas != 0, 1, 0)) / len(meas)}%")
+            meas = undersample(meas, f, undersample_method)
+        # undo order change
+        meas = meas[order_cc]
+        # meas[order_cc] = np.array(meas)
+        meas = meas[order_walsh]
+        print(f"sampling: {100 * np.sum(np.where(meas != 0, 1, 0)) / len(meas)}%")
         output = r.reconstruct(meas)
         out = np.real(output).reshape(image.shape)
         # plt.imshow(out, cmap=plt.get_cmap('gray'))
+        # plt.show()
         plt.imsave(f"outputs/Fourier_{f}.png", np.kron(out, np.ones((5, 5))), cmap=plt.get_cmap('gray'))
     print("done")
-    # plt.show()
 
 
 def undersample(meas, f, method=None):
-    if method is None or method == 'None':
+    if method is None or method == 'Sharp':
         meas[int(len(meas) * f):] = 0
         return meas
     if method == 'Scale':
@@ -132,11 +151,6 @@ def my_45(mask):
         my_mask[2 * m - d, int(n / 2 - d / 2):int(n / 2 - d / 2 + d + 1)] = np.diag(mask, k=(d - m))
 
     return my_mask
-    # 0, 1, 2, 3=diag, 2, 1, 0      - d
-    # 3, 2, 1, 0=diag, -1, -2, -3   - np.diag's k = m - d
-    # 1, 2, 3, 4=diag, 3, 2, 1      - number of elements = d + 1
-    # 0, 0, 1, 2=diag, 1, 0, 0      - floor(d/ 2)
-    # 2, 1, 1, 0=diag, 1, 1, 2      - first element = (n / 2) - floor(d/ 2)
 
 
 def my_45_old(mask):
@@ -181,3 +195,17 @@ def noise_and_undersampling(resolution):
     plt.imsave(f"outputs/output_{0.99}_{file}", r.reconstruct(measurements), cmap=plt.get_cmap('gray'))
 
     # reconstruct_with_other_images_best_masks([32, 32], "Earth4k1.jpg", "Earth4k1.jpg")
+
+
+def cake_cutting(resolution):  # returns cake cutting ordering array, requiring Hadamard to be used
+    pixels = np.asarray(resolution).prod()
+    from scipy.linalg import hadamard
+    hadamard_matrix = hadamard(pixels)
+    hadamard_matrix[hadamard_matrix == -1] = 0
+    totals = np.zeros(pixels)
+    from skimage import measure
+    for i, mask in enumerate(hadamard_matrix):
+        mask = mask.reshape(resolution)
+        totals[i] = measure.label(mask, return_num=True, connectivity=1)[1] + measure.label(1 - mask, return_num=True,
+                                                                                            connectivity=1)[1]
+    return sorted(range(len(totals)), key=lambda k: totals[k])  # todo sort from stackoverflow.com/questions/7851077
